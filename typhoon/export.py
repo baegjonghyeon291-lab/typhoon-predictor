@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .data import load, download, ROOT
-from .features import add_features, add_targets, FEATURES
+from .features import add_features, add_targets, add_env, predict, FEATURES
 from .train import SPLIT_YEAR
 
 OUT = ROOT / "docs" / "data"
@@ -43,9 +43,8 @@ def export_models():
 
 def predict_rows(d, models):
     d = d.copy()
-    for c, m in models.items():
-        d[f"p_{c}"] = m["clf"].predict_proba(d[FEATURES])[:, 1]
-        d[f"h_{c}"] = m["reg"].predict(d[FEATURES])
+    for c in models:
+        d[f"p_{c}"], d[f"h_{c}"] = predict(c, d)
     return d
 
 
@@ -108,9 +107,11 @@ def main():
     ap.add_argument("--update", action="store_true")
     if ap.parse_args().update:
         download()
+        from . import env_atmos
+        env_atmos.build(recent=True)
     OUT.mkdir(parents=True, exist_ok=True)
-    df = add_features(load())
-    models = {c: joblib.load(ROOT / "models" / f"{c}.joblib") for c in ["korea", "japan"]}
+    df = add_env(add_features(load()))
+    models = ["korea", "japan"]
     export_models()
     for name, obj in [("latest", export_recent(df, models)), ("history", export_history(df, models)),
                       ("stats", export_stats(df))]:

@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from .data import haversine
+from .data import haversine, ROOT
 
 HORIZON_H = 120
 SEOUL = (37.57, 126.98)
@@ -11,6 +11,14 @@ TOKYO = (35.68, 139.69)
 FEATURES = ["LAT", "LON", "wind", "pres", "dwind_24", "dlat_6", "dlon_6", "dlat_24", "dlon_24",
             "speed_kmh", "heading", "age_h", "month", "doy",
             "dist_seoul", "bearing_seoul", "dist_tokyo", "bearing_tokyo"]
+
+
+ENV_FILES = ["atmos_features.parquet", "ocean_features.parquet"]
+ENV_PREFIXES = ("atm_", "ocn_")
+# 환경 모델에 쓰는 특성. 해수온·기후 지수와 500hPa 고도 절대값은 기후 추세로 기준이 바뀌어
+# 2015년 이후 검증 성능을 떨어뜨려서 빼고, 지향류와 고기압의 상대 위치만 쓴다(reports/env_experiment.txt).
+ENV_FEATURES = ["atm_u_steer", "atm_v_steer", "atm_u_steer_24", "atm_v_steer_24", "atm_shear",
+                "atm_dz_ew", "atm_dz_n", "atm_dz_max", "atm_ridge_dlon", "atm_ridge_dlat"]
 
 
 def bearing(lat1, lon1, lat2, lon2):
@@ -51,3 +59,53 @@ def add_targets(df, country):
     df = df[df.arrival.isna() | (df.hours_to > 0)].copy()
     df["hit"] = (df.hours_to <= HORIZON_H).astype(int)
     return df
+
+
+def add_env(df):
+    """data/env/ 의 대기·해양 특성(env_atmos, env_ocean 출력)을 시점별로 붙인다. 없으면 그대로."""
+    for f in ENV_FILES:
+        p = ROOT / "data" / "env" / f
+        if p.exists():
+            env = pd.read_parquet(p)
+            df = df.merge(env.drop_duplicates(["SID", "time"]), on=["SID", "time"], how="left")
+    if "atm_z500" in df:
+        df["atm_dz_ew"] = df.atm_z500_e - df.atm_z500_w
+        df["atm_dz_n"] = df.atm_z500_n - df.atm_z500
+        df["atm_dz_max"] = df.atm_z500_max - df.atm_z500
+        df["atm_ridge_dlon"] = df.atm_ridge_west - df.LON
+        df["atm_ridge_dlat"] = df.atm_ridge_lat - df.LAT
+    return df
+
+
+def env_columns(df):
+    return [c for c in ENV_FEATURES if c in df.columns]
+
+
+def model_features(m):
+    """모델에 저장된 특성 목록. 예전 모델은 경로 특성만 쓴다."""
+    return m.get("features", FEATURES)
+
+
+def load_model(country, full=True):
+    """환경 특성 모델(_full)이 있으면 그것, 없으면 경로만 쓰는 모델."""
+    import joblib
+    p = ROOT / "models" / f"{country}_full.joblib"
+    if full and p.exists():
+        return joblib.load(p)
+    return joblib.load(ROOT / "models" / f"{country}.joblib")
+
+
+def predict(country, d):
+    """도달 확률과 남은 시간. 환경 자료가 있는 시점은 환경 모델, 없으면(최근 재분석 미갱신 등) 경로 모델."""
+    track = load_model(country, full=False)
+    p = track["clf"].predict_proba(d[FEATURES])[:, 1]
+    h = track["reg"].predict(d[FEATURES])
+    full = load_model(country)
+    feats = model_features(full)
+    env = [c for c in ENV_FEATURES if c in feats]
+    if env:
+        has = d[env].notna().any(axis=1).to_numpy()
+        if has.any():
+            p[has] = full["clf"].predict_proba(d.loc[has, feats])[:, 1]
+            h[has] = full["reg"].predict(d.loc[has, feats])
+    return p, h

@@ -6,3 +6,8 @@ data/raw/
 *.ipynb_checkpoints
 .DS_Store
 .playwright-mcp/
+data/env/ncep/
+data/env/era5/
+data/env/ocean/
+data/kma/
+data/jma/

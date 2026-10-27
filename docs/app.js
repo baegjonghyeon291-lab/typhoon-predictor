@@ -5,6 +5,11 @@ const FEATURE_KO = {
   dlat_6: "6시간 남북 이동", dlon_6: "6시간 동서 이동", dlat_24: "24시간 남북 이동", dlon_24: "24시간 동서 이동",
   speed_kmh: "이동 속도", heading: "진행 방향", age_h: "발생 후 시간",
   dist_seoul: "서울까지 거리", bearing_seoul: "서울 방위", dist_tokyo: "도쿄까지 거리", bearing_tokyo: "도쿄 방위",
+  atm_u_steer: "동서 지향류", atm_v_steer: "남북 지향류", atm_u_steer_24: "하루 동서 지향류 변화", atm_v_steer_24: "하루 남북 지향류 변화",
+  atm_shear: "연직 바람 시어", atm_z500: "500hPa 고도", atm_z500_n: "북쪽 500hPa 고도", atm_z500_e: "동쪽 500hPa 고도",
+  atm_z500_w: "서쪽 500hPa 고도", atm_ridge_west: "북태평양 고기압 서쪽 끝", atm_ridge_lat: "고기압 축 위도", atm_z500_max: "고기압 세기",
+  ocn_sst: "해수면 온도", ocn_sst_anom: "해수온 편차", ocn_sst_ahead: "북쪽 해수온", ocn_sst_ahead_diff: "북쪽 해수온 차이",
+  ocn_oni: "엘니뇨 지수", ocn_pdo: "태평양 10년 진동", ocn_nino4: "니뇨4 편차",
 };
 
 Chart.defaults.color = C.muted;
@@ -162,9 +167,11 @@ function renderSim(model) {
 /* 한국 vs 일본 */
 function renderCompare(stats) {
   const a = stats.analysis, m = stats.metrics;
+  const leadP = a.model_warning_lead, leadF = a.model_warning_lead_full || {};
+  const warn = c => (leadF[c] || leadP[c]).median_warning_lead_h;
   const nums = [
     ["natK", a.natural_lead.korea.median_h], ["natJ", a.natural_lead.japan.median_h],
-    ["warnK", a.model_warning_lead.korea.median_warning_lead_h], ["warnJ", a.model_warning_lead.japan.median_warning_lead_h],
+    ["warnK", warn("korea")], ["warnJ", warn("japan")],
     ["turnK", a.track_turn_last_48h.korea.median_abs_turn_deg, 1], ["turnJ", a.track_turn_last_48h.japan.median_abs_turn_deg, 1],
     ["agency", a.agency_tracking_start.median_kma_minus_jma_h],
   ];
@@ -173,35 +180,51 @@ function renderCompare(stats) {
     el.textContent = "0";
     reveal(el.closest(".stat"), () => countUp(el, v, d || 0));
   });
+  [["korea", "warnK"], ["japan", "warnJ"]].forEach(([c, id]) => {
+    const p = document.getElementById(id).parentElement;
+    p.querySelector(".was")?.remove();
+    if (leadF[c]) p.insertAdjacentHTML("beforeend", `<small class="was">경로 모델 ${leadP[c].median_warning_lead_h}시간</small>`);
+  });
   document.getElementById("agencyRatio").textContent =
     `${a.agency_tracking_start.storms}개 태풍 중 ${Math.round(a.agency_tracking_start.kma_later_ratio * 100)}%`;
 
   const leads = [24, 48, 72, 96, 120];
+  const ko = { korea: "한국", japan: "일본" };
+  const hasFull = ["korea", "japan"].some(c => leadF[c]);
+  const sets = [];
+  ["korea", "japan"].forEach(c => {
+    const line = (src, full) => ({
+      label: hasFull ? `${ko[c]} ${full ? "환경" : "경로"}` : ko[c],
+      data: leads.map(h => src[c][`warned_${h}h_before`] * 100),
+      borderColor: C[c], tension: .35, borderWidth: full || !hasFull ? 2.5 : 1.8,
+      backgroundColor: full || !hasFull ? C[c] + "22" : C[c], fill: full || !hasFull,
+      borderDash: hasFull && !full ? [6, 5] : [], pointRadius: hasFull && !full ? 2.5 : 4,
+      pointStyle: full || !hasFull ? "circle" : "line",
+    });
+    sets.push(line(leadP, false));
+    if (leadF[c]) sets.push(line(leadF, true));
+  });
   reveal(document.getElementById("leadChart").closest(".card"), () => new Chart(document.getElementById("leadChart"), {
     type: "line",
-    data: {
-      labels: leads.map(h => `${h}시간 전`),
-      datasets: ["korea", "japan"].map(c => ({
-        label: c === "korea" ? "한국" : "일본",
-        data: leads.map(h => a.model_warning_lead[c][`warned_${h}h_before`] * 100),
-        borderColor: C[c], backgroundColor: C[c] + "22", fill: true, tension: .35, pointRadius: 4, borderWidth: 2.5,
-      })),
-    },
+    data: { labels: leads.map(h => `${h}시간 전`), datasets: sets },
     options: {
       maintainAspectRatio: false, animation: { duration: 1600 },
       scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
-      plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
+      plugins: {
+        legend: { labels: { usePointStyle: hasFull, boxWidth: 28, boxHeight: 8 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } },
+      },
     },
   }));
 
   const keys = [...new Set([...Object.keys(a.feature_importance.korea), ...Object.keys(a.feature_importance.japan)])]
-    .sort((x, y) => (a.feature_importance.korea[y] || 0) - (a.feature_importance.korea[x] || 0)).slice(0, 7);
+    .sort((x, y) => (a.feature_importance.korea[y] || 0) - (a.feature_importance.korea[x] || 0)).slice(0, 8);
   reveal(document.getElementById("impChart").closest(".card"), () => new Chart(document.getElementById("impChart"), {
     type: "bar",
     data: {
       labels: keys.map(k => FEATURE_KO[k] || k),
       datasets: ["korea", "japan"].map(c => ({
-        label: c === "korea" ? "한국" : "일본", data: keys.map(k => a.feature_importance[c][k] || 0),
+        label: ko[c], data: keys.map(k => a.feature_importance[c][k] || 0),
         backgroundColor: C[c], borderRadius: 4, barPercentage: .8,
       })),
     },
@@ -211,10 +234,12 @@ function renderCompare(stats) {
     },
   }));
 
-  document.getElementById("metrics").innerHTML =
-    `<span>검증 2015년~</span>` +
-    `<span>한국 AUC<b>${m.korea.auc}</b></span><span>한국 도착 시간 오차<b>${m.korea.arrival_mae_h}시간</b></span>` +
-    `<span>일본 AUC<b>${m.japan.auc}</b></span><span>일본 도착 시간 오차<b>${m.japan.arrival_mae_h}시간</b></span>`;
+  const full = m.full || {};
+  const chip = (c, name, key, unit = "") => full[c] && full[c][key] != null
+    ? `<span class="cmp">${ko[c]} ${name}<em>경로</em><s>${m[c][key]}${unit}</s><em>환경</em><b>${full[c][key]}${unit}</b></span>`
+    : `<span>${ko[c]} ${name}<b>${m[c][key]}${unit}</b></span>`;
+  document.getElementById("metrics").innerHTML = `<span>검증 2015년~</span>` +
+    ["korea", "japan"].map(c => chip(c, "AUC", "auc") + chip(c, "도착 시간 오차", "arrival_mae_h", "시간")).join("");
 }
 
 /* 지난 태풍 */
