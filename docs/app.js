@@ -1,4 +1,4 @@
-const C = { korea: "#c8283c", japan: "#1860c0", muted: "#566176", text: "#1b2740", ink: "#14213d", grid: "rgba(20,33,61,.08)", warn: "#94530a", frost: "#0a76ad" };
+const C = { korea: "#ff7a6b", japan: "#63aeff", kmap: "#c8283c", jmap: "#1860c0", muted: "#9bb8cd", text: "#d3e6f3", ink: "#7fc6e0", grid: "rgba(155,200,230,.14)", warn: "#f6b94e", frost: "#3fd2e6" };
 const KOREA_CITIES = [[37.57, 126.98], [35.18, 129.08], [35.16, 126.85], [33.50, 126.53], [37.75, 128.90], [36.35, 127.38]];
 const CITY_NAMES = ["서울", "부산", "광주", "제주", "강릉", "대전"];
 const FEATURE_KO = {
@@ -19,7 +19,7 @@ if (window.Chart) {
   Chart.defaults.color = C.muted;
   Chart.defaults.font.family = "'Pretendard Variable', Pretendard, system-ui, sans-serif";
   Chart.defaults.borderColor = C.grid;
-  Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: "rgba(20,33,61,.95)", titleColor: "#fff", bodyColor: "#fff", padding: 10, cornerRadius: 3, boxPadding: 4 });
+  Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: "rgba(3,12,20,.97)", borderColor: "#35607f", borderWidth: 1, titleColor: "#fff", bodyColor: "#fff", padding: 10, cornerRadius: 3, boxPadding: 4 });
 }
 
 const getJSON = p => fetch(p, { cache: "no-cache" }).then(r => { if (!r.ok) throw new Error(p); return r.json(); });
@@ -46,12 +46,12 @@ function seen(el, fn, th = .15) {
 
 /* 강도 체계 (풍속 kt 기준, 없으면 JMA 등급) */
 const LV = [
-  { name: "열대저압부", color: "#6b8299", ink: "#475b71" },
-  { name: "열대폭풍", color: "#2aa7d8", ink: "#0a6a96" },
-  { name: "강한 열대폭풍", color: "#f08a1c", ink: "#9a5200" },
-  { name: "태풍", color: "#e5383b", ink: "#c0262b" },
-  { name: "강한 태풍", color: "#a4161a", ink: "#9b1218" },
-  { name: "매우 강한 태풍", color: "#7b2cbf", ink: "#6a22a8" },
+  { name: "열대저압부", color: "#6b8299", ink: "#a9c0d4" },
+  { name: "열대폭풍", color: "#2aa7d8", ink: "#6fd3f5" },
+  { name: "강한 열대폭풍", color: "#f08a1c", ink: "#ffb35c" },
+  { name: "태풍", color: "#e5383b", ink: "#ff8a8d" },
+  { name: "강한 태풍", color: "#a4161a", ink: "#ff9a9e" },
+  { name: "매우 강한 태풍", color: "#7b2cbf", ink: "#d3a6f7" },
 ];
 function lvIndex(kt, grade) {
   if (kt != null) return kt < 34 ? 0 : kt < 48 ? 1 : kt < 64 ? 2 : kt < 85 ? 3 : kt < 105 ? 4 : 5;
@@ -99,7 +99,7 @@ function baseMap(id, center = [30, 130], zoom = 4) {
 // 한국 6개 도시 영향권(200km)
 function drawCities(map) {
   KOREA_CITIES.forEach((c, i) => {
-    L.circle(c, { radius: 200000, color: C.korea, weight: 1, opacity: .45, dashArray: "3 6", fillColor: C.korea, fillOpacity: .025, interactive: false }).addTo(map);
+    L.circle(c, { radius: 200000, color: C.kmap, weight: 1, opacity: .45, dashArray: "3 6", fillColor: C.kmap, fillOpacity: .025, interactive: false }).addTo(map);
     L.marker(c, { interactive: false, keyboard: false, icon: L.divIcon({ className: "tc-city", iconSize: [0, 0], html: `<i></i><span>${CITY_NAMES[i]}</span>` }) }).addTo(map);
   });
 }
@@ -286,7 +286,7 @@ function renderNow(latest) {
     if (live) {
       bounds.push(...s.track.map(t => [t[1], t[2]]));
       L.marker([last[1], last[2]], { icon: tcIcon({ size: iconSize(idx), idx, live: true, label: chipLabel(name(s), kt, hpa), cls }), keyboard: false, zIndexOffset: 1000 }).addTo(layer);
-      const color = s.korea.p >= .2 || s.korea.arrived ? C.korea : C.japan;
+      const color = s.korea.p >= .2 || s.korea.arrived ? C.kmap : C.jmap;
       const f = drawForecast(map, layer, s, last, color, cls);
       bounds.push(...f.points);
 
@@ -330,7 +330,7 @@ function renderSim(model) {
   form.date.value = new Date().toISOString().slice(0, 10);
   let pos = [24, 128];
   const marker = L.marker(pos, { icon: tcIcon({ size: 44, idx: 3, live: false }), draggable: true, zIndexOffset: 1000 }).addTo(map);
-  const path = L.polyline([], { color: C.ink, weight: 2.5, dashArray: "6 8", opacity: .6, lineCap: "round", interactive: false }).addTo(map);
+  const path = L.polyline([], { color: "#0a1f33", weight: 2.5, dashArray: "6 8", opacity: .7, lineCap: "round", interactive: false }).addTo(map);
 
   function update() {
     form.querySelectorAll("label").forEach(l => {
@@ -362,6 +362,24 @@ function renderSim(model) {
   seen(form.closest(".sim-panel"), update, .1);
 }
 
+/* ---------- 예측 시점 비교: 숫자 대결 ---------- */
+function renderVis(root, D) {
+  if (!root) return;
+  const pair = (lab, unit, L, R) => {
+    const m = Math.max(L.v, R.v) || 1;
+    const side = (s, cls) => `<div class="side ${cls}" style="--c:${s.c}"><span class="nm">${s.n}</span><b class="num">${s.v}<small>${unit}</small></b><span class="va"><i style="--h:${(s.v / m * 100).toFixed(1)}"></i></span></div>`;
+    return `<section class="vs-row"><h4 class="vs-lab">${lab}</h4><div class="vs-cols">${side(L, "l")}${side(R, "r")}</div></section>`;
+  };
+  let rows = "";
+  if (D.natK != null && D.natJ != null) rows += pair("발생에서 도착까지", "시간", { n: "한국", v: Math.round(D.natK), c: "var(--korea)" }, { n: "일본", v: Math.round(D.natJ), c: "var(--japan)" });
+  if (D.turnK != null && D.turnJ != null) rows += pair("도착 직전 48시간, 진행 방향이 꺾인 각도", "°", { n: "한국", v: D.turnK, c: "var(--korea)" }, { n: "일본", v: D.turnJ, c: "var(--japan)" });
+  if (D.fc != null && D.ours != null) rows += pair("도착 전 첫 경보 시점", "시간", { n: "기상청 예보", v: Math.round(D.fc), c: "var(--warn)" }, { n: "우리 모델", v: Math.round(D.ours), c: "var(--frost)" });
+  if (D.gap != null) rows += `<section class="vs-row gp"><h4 class="vs-lab">기상청 첫 발표가 일본 기록보다 늦은 시간</h4><div class="gp-in"><span class="nm" style="--c:var(--japan)">일본 첫 기록</span><div class="gp-mid"><b class="num">${D.gap}<small>시간</small></b><i class="gp-ln"></i></div><span class="nm" style="--c:var(--warn)">기상청 첫 발표</span></div></section>`;
+  const note = rows ? `<p class="cmp-note">일본 기록은 열대저압부 단계부터 시작될 수 있음${D.n != null ? ` · 기상청 첫 발표 비교 ${D.n}개 태풍` : ""}</p>` : "";
+  root.innerHTML = `<div class="vs">${rows}</div>${note}`;
+  root.querySelectorAll(".vs-row").forEach((e, i) => { e.style.setProperty("--r", i); seen(e, () => e.classList.add("in"), .3); });
+}
+
 /* ---------- 예측 시점 비교 ---------- */
 function renderCompare(stats, kma) {
   const a = stats.analysis, m = stats.metrics;
@@ -374,16 +392,20 @@ function renderCompare(stats, kma) {
   const ours = kma && kma.our_model_korea_full && has(kma.our_model_korea_full.median_warning_lead_h) ? kma.our_model_korea_full.median_warning_lead_h : warn("korea");
   const ko = { korea: "한국", japan: "일본" };
 
-  // 본문: 값이 있는 문단만, 수치는 모두 JSON 값
-  const ps = [];
-  if (nat && nat.korea && nat.japan) ps.push(`태풍이 발생해서 도착하기까지 걸린 시간의 중앙값은 한국 <b class="k">${nat.korea.median_h}시간</b>, 일본 <b class="j">${nat.japan.median_h}시간</b>이다.`);
-  if (turn && turn.korea && turn.japan) ps.push(`도착 직전 48시간 동안 진행 방향이 바뀐 각도의 중앙값은 한국 <b class="k">${Math.round(turn.korea.median_abs_turn_deg)}°</b>, 일본 <b class="j">${Math.round(turn.japan.median_abs_turn_deg)}°</b>이다.`);
-  if (agency && has(agency.h)) ps.push(`기상청의 첫 발표는 일본 기상청의 첫 기록보다 중앙값 <b class="w">${agency.h}시간</b> 늦다(태풍 ${agency.n}개). 다만 일본 기상청 기록은 열대저압부 단계부터 시작될 수 있어, 이 차이에는 시작 단계 정의의 차이도 섞여 있다.`);
-  if (kmaF && has(kmaF.median_warning_lead_h) && has(ours)) {
-    const nK = kma.our_model_korea_full && kma.our_model_korea_full.storms;
-    ps.push(`2015년 이후 한국에 닿은 태풍에서, 기상청 예보 진로가 처음 한국 6개 도시 200km 안을 지나간다고 한 시점은 도착 전 중앙값 <b class="w">${kmaF.median_warning_lead_h}시간</b>, 이 사이트 모델의 첫 경보는 <b class="k">${ours}시간</b>이다${has(nK) ? `(기상청 ${kmaF.storms}개, 모델 ${nK}개 태풍)` : ""}. 두 시점은 정의가 달라 같은 기준의 비교는 아니다.`);
-  }
-  $("prose").innerHTML = ps.map(p => `<p>${p}</p>`).join("");
+  const sinceF = kma && kma.korea_lead && kma.korea_lead.since_2015_same_as_model;
+  const issueL = sinceF && sinceF.first_issue;
+  const D = {
+    natK: nat && nat.korea && has(nat.korea.median_h) ? nat.korea.median_h : null,
+    natJ: nat && nat.japan && has(nat.japan.median_h) ? nat.japan.median_h : null,
+    turnK: turn && turn.korea && has(turn.korea.median_abs_turn_deg) ? Math.round(turn.korea.median_abs_turn_deg) : null,
+    turnJ: turn && turn.japan && has(turn.japan.median_abs_turn_deg) ? Math.round(turn.japan.median_abs_turn_deg) : null,
+    fc: kmaF && has(kmaF.median_warning_lead_h) ? kmaF.median_warning_lead_h : null,
+    ours: has(ours) ? ours : null,
+    issue: issueL && has(issueL.median_warning_lead_h) ? issueL.median_warning_lead_h : null,
+    gap: agency && has(agency.h) ? agency.h : null,
+    n: agency && has(agency.n) ? agency.n : null,
+  };
+  renderVis($("cmpVis"), D);
 
   // 경보 리드타임 차트 (선에 직접 이름)
   const leads = [24, 48, 72, 96, 120];
@@ -419,7 +441,7 @@ function renderCompare(stats, kma) {
   // 요인: 가는 막대 표
   const fi = a.feature_importance;
   const keys = [...new Set([...Object.keys(fi.korea), ...Object.keys(fi.japan)])]
-    .sort((x, y) => (fi.korea[y] || 0) - (fi.korea[x] || 0)).slice(0, 8);
+    .sort((x, y) => (fi.korea[y] || 0) - (fi.korea[x] || 0)).slice(0, 6);
   const mx = Math.max(...keys.map(k => Math.max(fi.korea[k] || 0, fi.japan[k] || 0))) || 1;
   $("factors").innerHTML = `<div class="fac-head"><span style="flex:1">예측에 크게 작용한 요인</span><span>한국</span><span>일본</span></div>`
     + keys.map(k => `<div class="fac"><span>${FEATURE_KO[k] || k}</span><div class="bars"><i class="bar korea"><u data-p="${(fi.korea[k] || 0) / mx}" style="background:${C.korea}"></u></i><i class="bar japan"><u data-p="${(fi.japan[k] || 0) / mx}" style="background:${C.japan}"></u></i></div></div>`).join("");
@@ -459,7 +481,7 @@ function renderHistory(history) {
         ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash(dash);
         ctx.beginPath(); ctx.moveTo(px, ar.top); ctx.lineTo(px, ar.bottom); ctx.stroke(); ctx.restore();
       };
-      draw(0, "rgba(200,40,60,.6)", [4, 4]);
+      draw(0, "rgba(255,122,107,.75)", [4, 4]);
       if (cur) draw(hoursTo(cur.track[+scrub.value]), C.ink, []);
     },
   };
@@ -554,7 +576,7 @@ function renderStats(stats) {
 /* ---------- 서리 ---------- */
 function renderFrost(fr) {
   const form = $("frostForm");
-  const COL = ["#14213d", "#c8283c", "#1860c0", "#b7791f", "#2f855a", "#7c3aed"];
+  const COL = ["#9fd8ea", "#ff7a6b", "#63aeff", "#f6b94e", "#5fd6a0", "#c39bff"];
   const ST = fr.stations;
   ST.forEach(s => form.stn.add(new Option(s.name, s.stn)));
   const y = new Date().getFullYear();

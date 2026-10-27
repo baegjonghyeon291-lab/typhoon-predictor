@@ -6,7 +6,6 @@
 <title>태풍 예측</title>
 <script>document.documentElement.classList.add("js")</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-kr@5.0.12/600.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -58,16 +57,16 @@
 <section id="compare">
   <div class="wrap">
     <div class="sec-head"><h2>예측 시점 비교</h2></div>
-    <div class="article">
-      <div class="prose" id="prose"></div>
+    <div class="cmp-vis" id="cmpVis"></div>
+    <div class="article cmp-b">
       <div class="chart-box tall">
         <h3>도착 전 경보 비율</h3>
         <canvas id="leadChart"></canvas>
       </div>
-    </div>
-    <div class="article second">
-      <div id="factors"></div>
-      <div id="metrics"></div>
+      <div class="side-col">
+        <div id="metrics"></div>
+        <div id="factors"></div>
+      </div>
     </div>
   </div>
 </section>
