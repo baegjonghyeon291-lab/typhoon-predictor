@@ -88,6 +88,29 @@ def track(g, extra=()):
             for t, la, lo, w, p, (_, r) in zip(g.time, g.LAT, g.LON, g.wind, g.pres, g.iterrows())]
 
 
+def latest_forecasts():
+    """일본 기상청 5일 예보(가장 최근 발표)를 태풍 이름별로. 예보 중심 위치와 70% 확률 반경(km)."""
+    from .sources import jma
+    rows = []
+    for p in sorted(jma.XML_DIR.glob("*.xml")):
+        try:
+            rows += jma.parse_report(p)
+        except Exception:
+            continue
+    if not rows:
+        return {}
+    d = pd.DataFrame(rows)
+    d = d[(d.info_type != "取消") & (d.lead_h > 0)]
+    out = {}
+    for name, g in d.groupby("name"):
+        g = g[g.report_time == g.report_time.max()].sort_values("lead_h")
+        issued = pd.to_datetime(g.report_time.iloc[0], utc=True).strftime("%Y-%m-%dT%H")
+        out[str(name).upper()] = {"issued": issued, "points": [
+            [int(r.lead_h), num(r.lat, 1), num(r.lon, 1), num(r.radius70_km, 0), num(r.pressure_hpa, 0),
+             num(r.max_wind_ms, 0)] for r in g.itertuples()]}
+    return out
+
+
 def export_recent(df, models, live=False):
     last_time = df.time.max()
     sids = df[df.time >= last_time - pd.Timedelta(days=RECENT_DAYS)].SID.unique()
@@ -95,7 +118,7 @@ def export_recent(df, models, live=False):
     for sid in sids:
         g = predict_rows(df[df.SID == sid], models)
         last = g.iloc[-1]
-        s = {"sid": sid, "name": str(g.NAME.iloc[0]), "start": g.time.min().strftime("%Y-%m-%dT%H"),
+        s = {"sid": sid, "name": str(g.NAME.iloc[0]), "grade": num(last.TOKYO_GRADE, 0), "start": g.time.min().strftime("%Y-%m-%dT%H"),
              "end": last.time.strftime("%Y-%m-%dT%H"), "track": track(g, ["p_korea", "p_japan"])}
         for c in models:
             hit = g[g[f"in_{c}"]]
@@ -106,6 +129,11 @@ def export_recent(df, models, live=False):
                         "eta": (last.time + pd.Timedelta(hours=float(last[f"h_{c}"]))).strftime("%Y-%m-%dT%H")}
         storms.append(s)
     storms.sort(key=lambda s: s["end"], reverse=True)
+    if live:
+        fc = latest_forecasts()
+        for s in storms:
+            if s["end"] == last_time.strftime("%Y-%m-%dT%H") and s["name"].upper() in fc:
+                s["forecast"] = fc[s["name"].upper()]
     return {"generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
             "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "storms": storms}
 
