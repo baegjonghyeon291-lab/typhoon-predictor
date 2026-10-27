@@ -1,4 +1,4 @@
-const C = { korea: "#d62f43", japan: "#1a6fd0", muted: "#5b6b82", text: "#0f1b2d", grid: "rgba(15,27,45,.08)", warn: "#a85a00" };
+const C = { korea: "#c8283c", japan: "#1860c0", muted: "#566176", text: "#1b2740", ink: "#14213d", grid: "rgba(20,33,61,.08)", warn: "#94530a", frost: "#0a76ad" };
 const KOREA_CITIES = [[37.57, 126.98], [35.18, 129.08], [35.16, 126.85], [33.50, 126.53], [37.75, 128.90], [36.35, 127.38]];
 const CITY_NAMES = ["서울", "부산", "광주", "제주", "강릉", "대전"];
 const FEATURE_KO = {
@@ -13,12 +13,17 @@ const FEATURE_KO = {
   ocn_oni: "엘니뇨 지수", ocn_pdo: "태평양 10년 진동", ocn_nino4: "니뇨4 편차",
 };
 
-Chart.defaults.color = C.muted;
-Chart.defaults.font.family = "'Pretendard Variable', Pretendard, system-ui, sans-serif";
-Chart.defaults.borderColor = C.grid;
-Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: "rgba(15,27,45,.94)", titleColor: "#fff", bodyColor: "#fff", padding: 10, cornerRadius: 8, boxPadding: 4 });
+const $ = id => document.getElementById(id);
+const REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (window.Chart) {
+  Chart.defaults.color = C.muted;
+  Chart.defaults.font.family = "'Pretendard Variable', Pretendard, system-ui, sans-serif";
+  Chart.defaults.borderColor = C.grid;
+  Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: "rgba(20,33,61,.95)", titleColor: "#fff", bodyColor: "#fff", padding: 10, cornerRadius: 3, boxPadding: 4 });
+}
 
-const getJSON = p => fetch(p, { cache: "no-cache" }).then(r => r.json());
+const getJSON = p => fetch(p, { cache: "no-cache" }).then(r => { if (!r.ok) throw new Error(p); return r.json(); });
+const soft = p => getJSON(p).catch(() => null);
 const utc = t => new Date(t + ":00:00Z");
 function kst(t, withYear = false) {
   const d = new Date(utc(t).getTime() + 9 * 36e5);
@@ -26,6 +31,18 @@ function kst(t, withYear = false) {
   return withYear ? `${d.getUTCFullYear()}년 ${s}` : s;
 }
 const pct = p => `${Math.round(p * 100)}%`;
+const has = v => v != null && !Number.isNaN(v);
+const setBar = (el, p) => { if (el) el.style.transform = `scaleX(${Math.max(0, Math.min(1, p))})`; };
+
+/* 화면에 들어왔을 때 한 번 실행 */
+function seen(el, fn, th = .15) {
+  if (!el) return;
+  if (!("IntersectionObserver" in window)) { fn && fn(); return; }
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { io.disconnect(); fn && fn(); }
+  }), { threshold: th });
+  io.observe(el);
+}
 
 /* 강도 체계 (풍속 kt 기준, 없으면 JMA 등급) */
 const LV = [
@@ -51,6 +68,7 @@ function fillWind(track) {
   return f;
 }
 
+/* ---------- 지도 부품 ---------- */
 const DOT = 1.6;
 function ensurePanes(map) {
   if (map._tcPanes) return;
@@ -59,13 +77,15 @@ function ensurePanes(map) {
   map._tcPanes = true;
 }
 
+// 지도마다 범례 하나(오른쪽 아래), 확대 버튼은 오른쪽 위
 function baseMap(id, center = [30, 130], zoom = 4) {
-  const map = L.map(id, { zoomControl: true, scrollWheelZoom: false, worldCopyJump: true }).setView(center, zoom);
+  const map = L.map(id, { zoomControl: false, scrollWheelZoom: false, worldCopyJump: true, dragging: !L.Browser.mobile }).setView(center, zoom);
+  L.control.zoom({ position: "topright" }).addTo(map);
   const base = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/";
   L.tileLayer(base + "World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", { attribution: "&copy; Esri", maxZoom: 10 }).addTo(map);
   L.tileLayer(base + "World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}", { maxZoom: 10 }).addTo(map);
   ensurePanes(map);
-  const lg = L.control({ position: "bottomleft" });
+  const lg = L.control({ position: "bottomright" });
   lg.onAdd = () => {
     const d = L.DomUtil.create("div", "tc-legend");
     d.innerHTML = LV.map(l => `<div><i style="background:${l.color}"></i>${l.name}</div>`).join("");
@@ -84,7 +104,7 @@ function drawCities(map) {
   });
 }
 
-// 고급 태풍 아이콘: 구름띠 4+4가닥 + 고정된 눈
+// 태풍 아이콘: 구름띠 4+4가닥 + 고정된 눈
 const BLADE = "M50 50C44 34 54 18 80 16C66 26 62 40 50 50Z";
 const TC_SVG = `<svg class="tc-svg" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="currentColor" fill-opacity=".13"/><g class="tc-arms">`
   + [45, 135, 225, 315].map(a => `<path d="${BLADE}" transform="rotate(${a} 50 50) translate(6 6) scale(.88)" fill="currentColor" fill-opacity=".32"/>`).join("")
@@ -127,7 +147,7 @@ function drawTrack(layer, track, { grade = null, animate = true, weight = 3.5, c
   }
   const restyle = () => segs.forEach((sg, k) => sg.setStyle({ opacity: opacityOf ? opacityOf(k) : .95 }));
   let dead = false;
-  if (!animate) items.forEach(f => f());
+  if (!animate || REDUCED) items.forEach(f => f());
   else {
     // 앞부분은 빠르게, 뒤로 갈수록 천천히
     let n = 0;
@@ -138,7 +158,6 @@ function drawTrack(layer, track, { grade = null, animate = true, weight = 3.5, c
 }
 
 // 예보 경로 + 불확실성 원뿔(전용 pane, 합쳐서 보이게)
-const MERC = L.Projection.SphericalMercator;
 function destPoint(p, brg, km) {
   const R = 6371, d = km / R, b = brg * Math.PI / 180, l1 = p[0] * Math.PI / 180, g1 = p[1] * Math.PI / 180;
   const l2 = Math.asin(Math.sin(l1) * Math.cos(d) + Math.cos(l1) * Math.sin(d) * Math.cos(b));
@@ -157,6 +176,7 @@ const ring = (c, km) => km ? [...Array(36)].map((_, i) => destPoint(c, i * 10, k
 function drawForecast(map, layer, s, last, color, cls) {
   const fc = s.forecast;
   if (!fc || !fc.points || !fc.points.length) return { circles: 0, hulls: 0, points: [] };
+  const MERC = L.Projection.SphericalMercator;
   const pts = fc.points;
   const path = [[last[1], last[2]], ...pts.map(p => [p[1], p[2]])];
   L.polyline(path, { color, weight: 2.5, opacity: .9, dashArray: "2 7", lineCap: "round", className: cls, interactive: false }).addTo(layer);
@@ -178,35 +198,80 @@ function drawForecast(map, layer, s, last, color, cls) {
   return { circles, hulls, points: path };
 }
 
-function reveal(el, fn) {
-  const io = new IntersectionObserver(es => es.forEach(e => {
-    if (e.isIntersecting) { io.unobserve(e.target); e.target.classList.add("in"); fn && fn(); }
-  }), { threshold: .15 });
-  io.observe(el);
-}
-
-function countUp(el, to, digits = 0) {
-  const t0 = performance.now(), dur = 1400;
+/* ---------- 차트 부품 ---------- */
+// 왼쪽에서 오른쪽으로 한 번 그려지는 효과(선 차트)
+const wipePlugin = {
+  id: "wipe",
+  beforeInit(c) { c.$p = 0; },
+  beforeDatasetsDraw(c) {
+    const p = c.$p ?? 1;
+    if (p >= 1) return;
+    const a = c.chartArea;
+    c.ctx.save(); c.ctx.beginPath();
+    c.ctx.rect(a.left - 12, a.top - 12, (a.width + 24) * p, a.height + 24);
+    c.ctx.clip(); c.$clipped = true;
+  },
+  afterDatasetsDraw(c) { if (c.$clipped) { c.ctx.restore(); c.$clipped = false; } },
+};
+function runWipe(chart, dur = 1800) {
+  if (REDUCED) { chart.$p = 1; chart.draw(); return; }
+  const t0 = performance.now();
   const tick = now => {
-    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
-    el.textContent = (to * e).toFixed(digits);
+    const k = Math.min(1, (now - t0) / dur);
+    chart.$p = 1 - Math.pow(1 - k, 3);
+    chart.draw();
     if (k < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
 }
+// 선 끝에 직접 이름 붙이기(겹치면 위아래로 벌림)
+const endLabels = {
+  id: "endLabels",
+  afterDatasetsDraw(c) {
+    const p = c.$p ?? 1, alpha = Math.max(0, Math.min(1, (p - .78) / .22));
+    if (alpha <= 0) return;
+    const a = c.chartArea, ctx = c.ctx, items = [];
+    c.data.datasets.forEach((ds, i) => {
+      const meta = c.getDatasetMeta(i), pt = meta.data[meta.data.length - 1];
+      if (!pt || meta.hidden || !ds.label) return;
+      items.push({ ds, x: pt.x, y: pt.y, ly: pt.y });
+    });
+    items.sort((u, v) => u.y - v.y);
+    for (let i = 1; i < items.length; i++) if (items[i].ly - items[i - 1].ly < 16) items[i].ly = items[i - 1].ly + 16;
+    ctx.save(); ctx.globalAlpha = alpha; ctx.textBaseline = "middle";
+    ctx.font = `700 12.5px ${Chart.defaults.font.family}`;
+    items.forEach(it => {
+      ctx.strokeStyle = it.ds.borderColor; ctx.fillStyle = it.ds.borderColor; ctx.lineWidth = 1;
+      if (Math.abs(it.ly - it.y) > 1) { ctx.beginPath(); ctx.moveTo(it.x + 3, it.y); ctx.lineTo(a.right + 8, it.ly); ctx.stroke(); }
+      ctx.fillText(it.ds.label, a.right + 12, it.ly);
+    });
+    ctx.restore();
+  },
+};
 
-/* 지금 */
+/* ---------- 현재 태풍 ---------- */
 function renderNow(latest) {
-  document.getElementById("asof").textContent = `자료 기준 ${kst(latest.data_until, true)}${latest.live ? " · 실시간(일본 기상청 공개 자료 포함)" : ""}`;
-  const map = baseMap("nowMap", [28, 132], 4);
-  const mapEl = document.getElementById("nowMap");
+  $("asof").textContent = `${kst(latest.data_until, true)} 기준`;
+  const map = baseMap("nowMap", [27, 134], 4);
+  const mapEl = $("nowMap");
   drawCities(map);
-  const list = document.getElementById("nowList");
+  const list = $("nowList"), goneList = $("goneList");
   const bounds = [];
+  const wide = () => window.innerWidth > 860;
+  const pad = () => ({ paddingTopLeft: [wide() ? 372 : 24, 40], paddingBottomRight: [24, 40], maxZoom: 5 });
   const focus = n => {
     mapEl.classList.toggle("focus", n != null);
     mapEl.querySelectorAll(".tc-p").forEach(e => e.classList.toggle("hot", n != null && e.classList.contains("tc-s" + n)));
   };
+  const name = s => s.name === "UNNAMED" ? "이름 없음" : s.name;
+  const bind = (el, n, s) => {
+    const fly = () => map.flyToBounds(s.track.map(t => [t[1], t[2]]), { ...pad(), duration: 1.1 });
+    el.addEventListener("click", fly);
+    el.addEventListener("keydown", e => { if (e.key === "Enter") fly(); });
+    ["mouseenter", "focus"].forEach(ev => el.addEventListener(ev, () => focus(n)));
+    ["mouseleave", "blur"].forEach(ev => el.addEventListener(ev, () => focus(null)));
+  };
+  let liveN = 0, goneN = 0;
   latest.storms.forEach((s, n) => {
     const live = s.end === latest.data_until;
     const cls = `tc-p tc-s${n}`;
@@ -216,57 +281,56 @@ function renderNow(latest) {
     const kt = last[3] ?? null, hpa = last[4] ?? null;
     const idx = lvIndex(kt ?? (live ? w[w.length - 1] : null), s.grade);
     drawTrack(layer, s.track, { grade: s.grade, cls, dates: live });
+    const li = document.createElement("li");
+    li.tabIndex = 0;
     if (live) {
       bounds.push(...s.track.map(t => [t[1], t[2]]));
-      const nm = s.name === "UNNAMED" ? "이름 없음" : s.name;
-      L.marker([last[1], last[2]], { icon: tcIcon({ size: iconSize(idx), idx, live: true, label: chipLabel(nm, kt, hpa), cls }), keyboard: false, zIndexOffset: 1000 }).addTo(layer);
+      L.marker([last[1], last[2]], { icon: tcIcon({ size: iconSize(idx), idx, live: true, label: chipLabel(name(s), kt, hpa), cls }), keyboard: false, zIndexOffset: 1000 }).addTo(layer);
       const color = s.korea.p >= .2 || s.korea.arrived ? C.korea : C.japan;
       const f = drawForecast(map, layer, s, last, color, cls);
       bounds.push(...f.points);
-    } else {
-      L.marker([last[1], last[2]], { interactive: false, keyboard: false, icon: L.divIcon({ className: `tc-icon ${cls}`, iconSize: [18, 18], iconAnchor: [9, 9], html: `<div class="tc-end" style="color:${LV[idx].color}"><i></i><div class="tc-label">${s.name === "UNNAMED" ? "이름 없음" : s.name}</div></div>` }) }).addTo(layer);
-    }
 
-    const card = document.createElement("article");
-    card.className = "storm" + (live ? "" : " gone");
-    card.tabIndex = 0;
-    card.style.animationDelay = `${n * 80}ms`;
-    const prob = (c, label) => {
-      const v = s[c];
-      if (v.arrived) return `<div class="prob ${c}"><span>${label}</span><strong>도달</strong><em>${kst(v.arrived)}</em></div>`;
-      if (!live) return `<div class="prob ${c}"><span>${label}</span><strong>–</strong></div>`;
-      return `<div class="prob ${c}"><span>${label} 5일 내</span><strong>${pct(v.p)}</strong>${v.p >= .2 ? `<em>약 ${Math.max(0, v.hours)}시간 뒤 · <span class="nw">${kst(v.eta)}</span></em>` : ""}<div class="meter"><i data-w="${v.p * 100}"></i></div></div>`;
-    };
-    const L1 = LV[idx];
-    const vit = (kt != null || hpa != null) ? `<div class="vitals">${kt != null ? `<div><b>${kt}</b><span>kt 풍속</span></div>` : ""}${hpa != null ? `<div><b>${hpa}</b><span>hPa 기압</span></div>` : ""}</div>` : "";
-    card.innerHTML = `<div class="storm-head"><b>${s.name === "UNNAMED" ? "이름 없음" : s.name}</b><span class="head-r">${kt != null || s.grade != null ? `<span class="badge lv" style="--c:${L1.color};--ci:${L1.ink}">${lvName(kt, s.grade)}</span>` : ""}<span class="badge ${live ? "live" : ""}">${live ? "활동 중" : "소멸"}</span></span></div>
-      ${vit}<div class="probs">${prob("korea", "한국")}${prob("japan", "일본")}</div>
-      <div class="storm-time">${kst(s.start)} – ${kst(s.end)}</div>`;
-    const fly = () => map.flyToBounds(s.track.map(t => [t[1], t[2]]), { padding: [40, 40], duration: 1 });
-    card.addEventListener("click", fly);
-    card.addEventListener("keydown", e => { if (e.key === "Enter") fly(); });
-    ["mouseenter", "focus"].forEach(ev => card.addEventListener(ev, () => focus(n)));
-    ["mouseleave", "blur"].forEach(ev => card.addEventListener(ev, () => focus(null)));
-    list.appendChild(card);
+      const row = (c, label) => {
+        const v = s[c];
+        if (v.arrived) return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="1"></u></i><b>도달</b></div><div class="eta">${kst(v.arrived)}</div>`;
+        return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="${v.p}"></u></i><b>${pct(v.p)}</b></div>`
+          + (v.p >= .2 ? `<div class="eta">약 ${Math.max(0, v.hours)}시간 뒤 · ${kst(v.eta)} 도착 예상</div>` : "");
+      };
+      const L1 = LV[idx];
+      li.style.animationDelay = `${liveN * 90}ms`;
+      li.innerHTML = `<div class="s-head"><b>${name(s)}</b>${kt != null || s.grade != null ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${lvName(kt, s.grade)}</span>` : ""}</div>`
+        + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
+        + row("korea", "한국") + row("japan", "일본");
+      list.appendChild(li); liveN++;
+    } else {
+      L.marker([last[1], last[2]], { interactive: false, keyboard: false, icon: L.divIcon({ className: `tc-icon ${cls}`, iconSize: [18, 18], iconAnchor: [9, 9], html: `<div class="tc-end" style="color:${LV[idx].color}"><i></i><div class="tc-label">${name(s)}</div></div>` }) }).addTo(layer);
+      const hit = [s.korea.arrived ? `한국 ${kst(s.korea.arrived)} 도달` : "", s.japan.arrived ? `일본 ${kst(s.japan.arrived)} 도달` : ""].filter(Boolean).join(" · ");
+      li.innerHTML = `<b>${name(s)}</b><span>${kst(s.start)} – ${kst(s.end)}</span>${hit ? `<em>${hit}</em>` : ""}`;
+      goneList.appendChild(li); goneN++;
+    }
+    bind(li, n, s);
   });
-  if (bounds.length) map.fitBounds([...bounds, ...KOREA_CITIES], { padding: [30, 30], maxZoom: 5 });
-  setTimeout(() => list.querySelectorAll(".meter i").forEach(i => i.style.width = i.dataset.w + "%"), 400);
+  if (!liveN) list.innerHTML = `<li class="empty" style="cursor:default;animation:none">활동 중인 태풍 없음</li>`;
+  if (goneN) { $("goneBox").hidden = false; $("goneN").textContent = `(${goneN})`; }
+
+  // 첫 로드: 넓게 보다가 활동 중인 태풍 쪽으로 한 번 부드럽게 이동
+  if (bounds.length) {
+    const target = L.latLngBounds([...bounds, ...KOREA_CITIES]);
+    if (REDUCED) map.fitBounds(target, pad());
+    else setTimeout(() => map.flyToBounds(target, { ...pad(), duration: 2.4, easeLinearity: .2 }), 700);
+  }
+  setTimeout(() => list.querySelectorAll(".bar u").forEach(u => setBar(u, +u.dataset.p)), 500);
 }
 
-/* 직접 예측 */
+/* ---------- 직접 예측 ---------- */
 function renderSim(model) {
   const map = baseMap("simMap", [28, 130], 4);
   drawCities(map);
-  const form = document.getElementById("simForm");
+  const form = $("simForm");
   form.date.value = new Date().toISOString().slice(0, 10);
   let pos = [24, 128];
   const marker = L.marker(pos, { icon: tcIcon({ size: 44, idx: 3, live: false }), draggable: true, zIndexOffset: 1000 }).addTo(map);
-  const path = L.polyline([], { color: C.text, weight: 2.5, dashArray: "6 8", opacity: .6, lineCap: "round", interactive: false }).addTo(map);
-  const ring = (c, p) => {
-    const bar = document.querySelector(`.ring[data-c=${c}] .bar`);
-    bar.style.strokeDashoffset = 326.7 * (1 - p);
-    bar.style.opacity = p < .01 ? 0 : 1;
-  };
+  const path = L.polyline([], { color: C.ink, weight: 2.5, dashArray: "6 8", opacity: .6, lineCap: "round", interactive: false }).addTo(map);
 
   function update() {
     form.querySelectorAll("label").forEach(l => {
@@ -281,120 +345,103 @@ function renderSim(model) {
     const f = makeFeatures(s);
     const me = marker.getElement();
     if (me) me.firstChild.style.color = LV[lvIndex(s.wind, null)].color;
-    [["korea", "simK", "simKeta"], ["japan", "simJ", "simJeta"]].forEach(([c, id, eid]) => {
+    [["korea", "simK", "simKeta", "simKbar"], ["japan", "simJ", "simJeta", "simJbar"]].forEach(([c, id, eid, bid]) => {
       const r = predict(model, c, f);
-      document.getElementById(id).textContent = pct(r.p);
-      document.getElementById(eid).textContent = r.p >= .2 ? `약 ${Math.max(0, Math.round(r.hours))}시간 뒤` : "";
-      ring(c, r.p);
+      $(id).textContent = pct(r.p);
+      $(eid).textContent = r.p >= .2 ? `약 ${Math.max(0, Math.round(r.hours))}시간 뒤` : "";
+      setBar($(bid), r.p);
     });
     const ahead = [pos];
-    for (let h = 12; h <= 48; h += 12) ahead.push(destinationLL(pos, s.heading, s.speed * h));
+    for (let h = 12; h <= 48; h += 12) ahead.push(destPoint(pos, s.heading, s.speed * h));
     path.setLatLngs(ahead);
-    document.getElementById("simPos").textContent =
-      `${pos[0].toFixed(1)}°N ${pos[1].toFixed(1)}°E · 서울까지 ${Math.round(f.dist_seoul).toLocaleString()}km`;
+    $("simPos").textContent = `${pos[0].toFixed(1)}°N ${pos[1].toFixed(1)}°E · 서울까지 ${Math.round(f.dist_seoul).toLocaleString()}km`;
   }
-  const destinationLL = destPoint;
   map.on("click", e => { pos = [e.latlng.lat, e.latlng.lng]; marker.setLatLng(pos); update(); });
   marker.on("drag", e => { const l = e.target.getLatLng(); pos = [l.lat, l.lng]; update(); });
   form.addEventListener("input", update);
-  reveal(document.querySelector(".sim-panel"), update);
+  seen(form.closest(".sim-panel"), update, .1);
 }
 
-/* 한국 vs 일본 */
+/* ---------- 예측 시점 비교 ---------- */
 function renderCompare(stats, kma) {
   const a = stats.analysis, m = stats.metrics;
   const leadP = a.model_warning_lead, leadF = a.model_warning_lead_full || {};
   const warn = c => (leadF[c] || leadP[c]).median_warning_lead_h;
-  const nums = [
-    ["natK", a.natural_lead.korea.median_h], ["natJ", a.natural_lead.japan.median_h],
-    ["warnK", warn("korea")], ["warnJ", warn("japan")],
-    ["turnK", a.track_turn_last_48h.korea.median_abs_turn_deg, 1], ["turnJ", a.track_turn_last_48h.japan.median_abs_turn_deg, 1],
-    ["agency", a.agency_tracking_start.median_kma_minus_jma_h],
-  ];
-  nums.forEach(([id, v, d]) => {
-    const el = document.getElementById(id);
-    el.textContent = "0";
-    reveal(el.closest(".stat"), () => countUp(el, v, d || 0));
-  });
-  [["korea", "warnK"], ["japan", "warnJ"]].forEach(([c, id]) => {
-    const p = document.getElementById(id).parentElement;
-    p.querySelector(".was")?.remove();
-    if (leadF[c]) p.insertAdjacentHTML("beforeend", `<small class="was">경로 모델 ${leadP[c].median_warning_lead_h}시간</small>`);
-  });
+  const nat = a.natural_lead, turn = a.track_turn_last_48h;
   const kmaF = kma && kma.korea_lead && kma.korea_lead.since_2015_same_as_model && kma.korea_lead.since_2015_same_as_model.first_fcst_track_in_korea;
-  if (kmaF && kmaF.median_warning_lead_h != null) {
-    document.getElementById("warnK").parentElement.insertAdjacentHTML("beforeend", `<small class="was kma">기상청 예보 ${kmaF.median_warning_lead_h}시간</small>`);
-  }
-  document.getElementById("agencyRatio").textContent =
-    `${a.agency_tracking_start.storms}개 태풍 중 ${Math.round(a.agency_tracking_start.kma_later_ratio * 100)}%`;
-
-  const leads = [24, 48, 72, 96, 120];
+  const kmaFirst = kma && kma.kma_first_issue_vs_jma_first_record && kma.kma_first_issue_vs_jma_first_record.all;
+  const agency = kmaFirst ? { n: kmaFirst.n, h: kmaFirst.median_h } : (a.agency_tracking_start ? { n: a.agency_tracking_start.storms, h: a.agency_tracking_start.median_kma_minus_jma_h } : null);
+  const ours = kma && kma.our_model_korea_full && has(kma.our_model_korea_full.median_warning_lead_h) ? kma.our_model_korea_full.median_warning_lead_h : warn("korea");
   const ko = { korea: "한국", japan: "일본" };
+
+  // 본문: 값이 있는 문단만, 수치는 모두 JSON 값
+  const ps = [];
+  if (nat && nat.korea && nat.japan) ps.push(`태풍이 발생해서 도착하기까지 걸린 시간의 중앙값은 한국 <b class="k">${nat.korea.median_h}시간</b>, 일본 <b class="j">${nat.japan.median_h}시간</b>이다.`);
+  if (turn && turn.korea && turn.japan) ps.push(`도착 직전 48시간 동안 진행 방향이 바뀐 각도의 중앙값은 한국 <b class="k">${Math.round(turn.korea.median_abs_turn_deg)}°</b>, 일본 <b class="j">${Math.round(turn.japan.median_abs_turn_deg)}°</b>이다.`);
+  if (agency && has(agency.h)) ps.push(`기상청의 첫 발표는 일본 기상청의 첫 기록보다 중앙값 <b class="w">${agency.h}시간</b> 늦다(태풍 ${agency.n}개). 다만 일본 기상청 기록은 열대저압부 단계부터 시작될 수 있어, 이 차이에는 시작 단계 정의의 차이도 섞여 있다.`);
+  if (kmaF && has(kmaF.median_warning_lead_h) && has(ours)) {
+    const nK = kma.our_model_korea_full && kma.our_model_korea_full.storms;
+    ps.push(`2015년 이후 한국에 닿은 태풍에서, 기상청 예보 진로가 처음 한국 6개 도시 200km 안을 지나간다고 한 시점은 도착 전 중앙값 <b class="w">${kmaF.median_warning_lead_h}시간</b>, 이 사이트 모델의 첫 경보는 <b class="k">${ours}시간</b>이다${has(nK) ? `(기상청 ${kmaF.storms}개, 모델 ${nK}개 태풍)` : ""}. 두 시점은 정의가 달라 같은 기준의 비교는 아니다.`);
+  }
+  $("prose").innerHTML = ps.map(p => `<p>${p}</p>`).join("");
+
+  // 경보 리드타임 차트 (선에 직접 이름)
+  const leads = [24, 48, 72, 96, 120];
   const hasFull = ["korea", "japan"].some(c => leadF[c]);
   const sets = [];
-  ["korea", "japan"].forEach(c => {
-    const line = (src, full) => ({
-      label: hasFull ? `${ko[c]} ${full ? "환경" : "경로"}` : ko[c],
-      data: leads.map(h => src[c][`warned_${h}h_before`] * 100),
-      borderColor: C[c], tension: .35, borderWidth: full || !hasFull ? 2.5 : 1.8,
-      backgroundColor: full || !hasFull ? C[c] + "22" : C[c], fill: full || !hasFull,
-      borderDash: hasFull && !full ? [6, 5] : [], pointRadius: hasFull && !full ? 2.5 : 4,
-      pointStyle: full || !hasFull ? "circle" : "line",
-    });
-    sets.push(line(leadP, false));
-    if (leadF[c]) sets.push(line(leadF, true));
+  const line = (label, src, color, o = {}) => ({
+    label, data: leads.map(h => src[`warned_${h}h_before`] * 100), borderColor: color, backgroundColor: color,
+    tension: .3, borderWidth: 2.4, pointRadius: 3, pointHoverRadius: 5, fill: false, ...o,
   });
-  if (kmaF) {
-    sets.push({
-      label: "기상청 예보", data: leads.map(h => kmaF[`warned_${h}h_before`] * 100),
-      borderColor: C.warn, backgroundColor: C.warn, tension: .35, borderWidth: 2.5, borderDash: [2, 5],
-      pointRadius: 4, pointStyle: "rectRot", fill: false,
-    });
+  if (kmaF) sets.push(line("기상청 예보", kmaF, C.warn, { borderDash: [2, 5], pointStyle: "rectRot", pointRadius: 4 }));
+  if (hasFull) {
+    if (leadF.korea) sets.push(line("한국 환경 모델", leadF.korea, C.korea, { borderWidth: 3 }));
+    if (leadP.korea) sets.push(line("한국 경로 모델", leadP.korea, C.korea, { borderDash: [6, 5], borderWidth: 1.8, pointRadius: 2 }));
+    if (leadF.japan) sets.push(line("일본 환경 모델", leadF.japan, C.japan, { borderWidth: 1.8, pointRadius: 2 }));
+  } else {
+    ["korea", "japan"].forEach(c => leadP[c] && sets.push(line(`${ko[c]} 모델`, leadP[c], C[c])));
   }
-  const usePS = hasFull || !!kmaF;
-  reveal(document.getElementById("leadChart").closest(".card"), () => new Chart(document.getElementById("leadChart"), {
-    type: "line",
-    data: { labels: leads.map(h => `${h}시간 전`), datasets: sets },
-    options: {
-      maintainAspectRatio: false, animation: { duration: 1600 },
-      scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
-      plugins: {
-        legend: { labels: { usePointStyle: usePS, boxWidth: 28, boxHeight: 8 } },
-        tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } },
+  seen($("leadChart").closest(".chart-box"), () => {
+    if (!window.Chart) return;
+    const ch = new Chart($("leadChart"), {
+      type: "line", plugins: [wipePlugin, endLabels],
+      data: { labels: leads.map(h => `${h}시간 전`), datasets: sets },
+      options: {
+        maintainAspectRatio: false, animation: false, layout: { padding: { right: 108, top: 6 } },
+        interaction: { mode: "index", intersect: false },
+        scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
       },
-    },
-  }));
+    });
+    runWipe(ch);
+  }, .25);
 
-  const keys = [...new Set([...Object.keys(a.feature_importance.korea), ...Object.keys(a.feature_importance.japan)])]
-    .sort((x, y) => (a.feature_importance.korea[y] || 0) - (a.feature_importance.korea[x] || 0)).slice(0, 8);
-  reveal(document.getElementById("impChart").closest(".card"), () => new Chart(document.getElementById("impChart"), {
-    type: "bar",
-    data: {
-      labels: keys.map(k => FEATURE_KO[k] || k),
-      datasets: ["korea", "japan"].map(c => ({
-        label: ko[c], data: keys.map(k => a.feature_importance[c][k] || 0),
-        backgroundColor: C[c], borderRadius: 4, barPercentage: .8,
-      })),
-    },
-    options: {
-      indexAxis: "y", maintainAspectRatio: false, animation: { duration: 1600 },
-      scales: { x: { ticks: { display: false } }, y: { grid: { display: false } } },
-    },
-  }));
+  // 요인: 가는 막대 표
+  const fi = a.feature_importance;
+  const keys = [...new Set([...Object.keys(fi.korea), ...Object.keys(fi.japan)])]
+    .sort((x, y) => (fi.korea[y] || 0) - (fi.korea[x] || 0)).slice(0, 8);
+  const mx = Math.max(...keys.map(k => Math.max(fi.korea[k] || 0, fi.japan[k] || 0))) || 1;
+  $("factors").innerHTML = `<div class="fac-head"><span style="flex:1">예측에 크게 작용한 요인</span><span>한국</span><span>일본</span></div>`
+    + keys.map(k => `<div class="fac"><span>${FEATURE_KO[k] || k}</span><div class="bars"><i class="bar korea"><u data-p="${(fi.korea[k] || 0) / mx}" style="background:${C.korea}"></u></i><i class="bar japan"><u data-p="${(fi.japan[k] || 0) / mx}" style="background:${C.japan}"></u></i></div></div>`).join("");
+  seen($("factors"), () => $("factors").querySelectorAll(".bar u").forEach(u => setBar(u, +u.dataset.p)), .2);
 
+  // 모델 지표: 한 장의 표
   const full = m.full || {};
-  const chip = (c, name, key, unit = "") => full[c] && full[c][key] != null
-    ? `<span class="cmp">${ko[c]} ${name}<em>경로</em><s>${m[c][key]}${unit}</s><em>환경</em><b>${full[c][key]}${unit}</b></span>`
-    : `<span>${ko[c]} ${name}<b>${m[c][key]}${unit}</b></span>`;
-  const kmaChip = kmaF && kmaF.median_warning_lead_h != null
-    ? `<span class="cmp">한국 첫 경보 중앙값<em>기상청 예보</em><s>${kmaF.median_warning_lead_h}시간</s><em>우리 모델</em><b>${warn("korea")}시간</b></span>` : "";
-  document.getElementById("metrics").innerHTML = `<span>검증 2015년~</span>` + kmaChip +
-    ["korea", "japan"].map(c => chip(c, "AUC", "auc") + chip(c, "도착 시간 오차", "arrival_mae_h", "시간")).join("");
+  const cell = v => has(v) ? v : "–";
+  const trow = (nameHtml, auc, mae, lead) => `<tr><td>${nameHtml}</td><td>${cell(auc)}</td><td>${has(mae) ? mae + "시간" : "–"}</td><td>${has(lead) ? lead + "시간" : "–"}</td></tr>`;
+  const rows = [];
+  ["korea", "japan"].forEach(c => {
+    const t = `<span class="${c === "korea" ? "k-t" : "j-t"}">${ko[c]}</span>`;
+    if (full[c]) rows.push(trow(`${t} 환경 모델`, full[c].auc, full[c].arrival_mae_h, leadF[c] && leadF[c].median_warning_lead_h));
+    if (m[c]) rows.push(trow(`${t} 경로 모델`, m[c].auc, m[c].arrival_mae_h, leadP[c] && leadP[c].median_warning_lead_h));
+    if (c === "korea" && kmaF && has(kmaF.median_warning_lead_h)) rows.push(trow(`<span class="w-t">기상청</span> 예보`, null, null, kmaF.median_warning_lead_h));
+  });
+  $("metrics").innerHTML = `<table><thead><tr><th>검증 2015년~</th><th>AUC</th><th>도착 시간 오차</th><th>첫 경보 중앙값</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
 }
 
-/* 지난 태풍 */
+/* ---------- 지난 태풍 ---------- */
 function renderHistory(history) {
-  const sel = document.getElementById("histSel"), scrub = document.getElementById("scrub"), play = document.getElementById("play");
+  const sel = $("histSel"), scrub = $("scrub"), play = $("play");
   history.forEach((s, i) => sel.add(new Option(`${s.season} ${s.name}`, i)));
   const map = baseMap("histMap", [30, 128], 4);
   drawCities(map);
@@ -412,8 +459,8 @@ function renderHistory(history) {
         ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash(dash);
         ctx.beginPath(); ctx.moveTo(px, ar.top); ctx.lineTo(px, ar.bottom); ctx.stroke(); ctx.restore();
       };
-      draw(0, "rgba(214,47,67,.6)", [4, 4]);
-      if (cur) draw(hoursTo(cur.track[+scrub.value]), C.text, []);
+      draw(0, "rgba(200,40,60,.6)", [4, 4]);
+      if (cur) draw(hoursTo(cur.track[+scrub.value]), C.ink, []);
     },
   };
   const hoursTo = t => (utc(t[0]) - utc(cur.arrival)) / 36e5;
@@ -429,7 +476,7 @@ function renderHistory(history) {
       if (lb) lb.innerHTML = chipLabel(kst(t[0]).replace(/^\d+월 /, ""), k, t[4] != null ? Math.round(t[4]) : null);
     }
     tr && tr.restyle();
-    document.getElementById("scrubTime").textContent = `${kst(t[0])} · 한국 ${pct(t[5] || 0)}`;
+    $("scrubTime").textContent = `${kst(t[0])} · 한국 ${pct(t[5] || 0)}`;
     chart && chart.update("none");
   }
 
@@ -446,20 +493,21 @@ function renderHistory(history) {
     const pts = c => cur.track.map(t => ({ x: hoursTo(t), y: (t[c] || 0) * 100 }));
     const data = {
       datasets: [
-        { label: "한국", data: pts(5), borderColor: C.korea, backgroundColor: C.korea + "22", fill: true },
+        { label: "한국", data: pts(5), borderColor: C.korea, backgroundColor: C.korea + "1f", fill: true },
         { label: "일본", data: pts(6), borderColor: C.japan, backgroundColor: "transparent" },
-      ].map(d => ({ ...d, tension: .3, pointRadius: 0, borderWidth: 2.5 })),
+      ].map(d => ({ ...d, tension: .3, pointRadius: 0, borderWidth: 2.4 })),
     };
     if (chart) { chart.data = data; chart.update(); }
-    else chart = new Chart(document.getElementById("histChart"), {
-      type: "line", data, plugins: [cursorLine],
+    else if (window.Chart) chart = new Chart($("histChart"), {
+      type: "line", data, plugins: [cursorLine, endLabels],
       options: {
-        maintainAspectRatio: false, animation: { duration: 1200 }, interaction: { mode: "nearest", axis: "x", intersect: false },
+        maintainAspectRatio: false, animation: { duration: REDUCED ? 0 : 1200 }, interaction: { mode: "nearest", axis: "x", intersect: false },
+        layout: { padding: { right: 40 } },
         scales: {
-          x: { type: "linear", ticks: { callback: v => v === 0 ? "도착" : `${v > 0 ? "+" : ""}${v}h`, stepSize: 24, maxRotation: 0, autoSkip: true } },
+          x: { type: "linear", bounds: "data", ticks: { callback: v => v === 0 ? "도착" : `${v > 0 ? "+" : ""}${v}h`, stepSize: 24, maxRotation: 0, autoSkip: true } },
           y: { min: 0, max: 100, ticks: { callback: v => v + "%" } },
         },
-        plugins: { tooltip: { callbacks: { title: i => `도착 ${i[0].parsed.x}시간`, label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => `도착 ${i[0].parsed.x}시간`, label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
       },
     });
     setFrame(0);
@@ -479,37 +527,38 @@ function renderHistory(history) {
   });
   scrub.addEventListener("input", () => { stop(); setFrame(+scrub.value); });
   sel.addEventListener("change", () => load(+sel.value));
-  reveal(document.getElementById("histMap"), () => load(0));
+  seen($("histMap"), () => load(0), .1);
 }
 
-/* 통계 */
+/* ---------- 통계 ---------- */
 function renderStats(stats) {
-  const years = Object.keys(stats.korea_by_year);
-  reveal(document.getElementById("monthChart").closest(".card"), () => new Chart(document.getElementById("monthChart"), {
-    type: "bar",
-    data: { labels: [...Array(12)].map((_, i) => `${i + 1}월`), datasets: [{ data: stats.korea_by_month, backgroundColor: C.korea, borderRadius: 6 }] },
-    options: { maintainAspectRatio: false, animation: { duration: 1400 }, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } } } },
-  }));
-  reveal(document.getElementById("yearChart").closest(".card"), () => new Chart(document.getElementById("yearChart"), {
-    type: "bar",
-    data: { labels: years, datasets: [{ data: years.map(y => stats.korea_by_year[y]), backgroundColor: C.japan, borderRadius: 2 }] },
-    options: {
-      maintainAspectRatio: false, animation: { duration: 1400 }, plugins: { legend: { display: false } },
-      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { ticks: { stepSize: 1 } } },
-    },
-  }));
+  const mo = stats.korea_by_month, mmax = Math.max(...mo) || 1, mpeak = mo.indexOf(Math.max(...mo));
+  $("monthList").innerHTML = mo.map((v, i) => `<div class="mrow${i === mpeak ? " peak" : ""}"><span>${i + 1}월</span><i class="bar"><u data-p="${v / mmax}"></u></i><b>${v}</b></div>`).join("");
+  seen($("monthList"), () => $("monthList").querySelectorAll(".bar u").forEach((u, i) => setTimeout(() => setBar(u, +u.dataset.p), REDUCED ? 0 : i * 45)), .2);
+
+  const years = Object.keys(stats.korea_by_year), yv = years.map(y => stats.korea_by_year[y]), ymax = Math.max(...yv);
+  seen($("yearChart").closest(".chart-box"), () => {
+    if (!window.Chart) return;
+    new Chart($("yearChart"), {
+      type: "bar",
+      data: { labels: years, datasets: [{ data: yv, backgroundColor: yv.map(v => v === ymax ? C.korea : C.ink), borderRadius: 0, barPercentage: .62, categoryPercentage: 1 }] },
+      options: {
+        maintainAspectRatio: false, animation: { duration: REDUCED ? 0 : 1400, easing: "easeOutCubic" },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y}개` } } },
+        scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0 } }, y: { ticks: { stepSize: 1 } } },
+      },
+    });
+  }, .2);
 }
 
-/* 서리 */
+/* ---------- 서리 ---------- */
 function renderFrost(fr) {
-  const form = document.getElementById("frostForm");
-  const COL = ["#d62f43", "#1a6fd0", "#c27803", "#0b86c2", "#7c3aed", "#15803d"];
+  const form = $("frostForm");
+  const COL = ["#14213d", "#c8283c", "#1860c0", "#b7791f", "#2f855a", "#7c3aed"];
   const ST = fr.stations;
   ST.forEach(s => form.stn.add(new Option(s.name, s.stn)));
   const y = new Date().getFullYear();
   form.date.value = `${y}-11-15`;
-  const bar = document.querySelector(".ring[data-c=frost] .bar");
-  const outEl = document.getElementById("frostP");
   const val = n => +form[n].value;
   function update() {
     form.querySelectorAll("label").forEach(l => {
@@ -530,52 +579,72 @@ function renderFrost(fr) {
     };
     const x = fr.features.map(f => (o[f] ?? NaN));
     const p = 1 / (1 + Math.exp(-runTrees(fr.clf, x)));
-    outEl.textContent = pct(p);
-    bar.style.strokeDashoffset = 326.7 * (1 - p);
-    bar.style.opacity = p < .01 ? 0 : 1;
+    $("frostP").textContent = pct(p);
+    setBar($("frostBar"), p);
   }
   form.addEventListener("input", update);
-  reveal(document.querySelector("#frost .sim-panel"), update);
+  seen(form.closest(".sim-panel"), update, .1);
+
+  seen($("frostChart").closest(".chart-box"), () => {
+    if (!window.Chart) return;
+    const ch = new Chart($("frostChart"), {
+      type: "line", plugins: [wipePlugin, endLabels],
+      data: {
+        labels: [...Array(12)].map((_, i) => `${i + 1}월`),
+        datasets: ST.map((s, i) => ({
+          label: s.name, data: s.rate.map(v => v * 100), borderColor: COL[i % 6], backgroundColor: COL[i % 6],
+          tension: .35, borderWidth: i === 0 ? 2.8 : 1.8, pointRadius: 0, pointHoverRadius: 4,
+        })),
+      },
+      options: {
+        maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+        layout: { padding: { right: 52, top: 6 } },
+        scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
+      },
+    });
+    runWipe(ch, 2000);
+  }, .25);
 
   const mmdd = t => { const [m, d] = String(t).split("-"); return `${+m}월 ${+d}일`; };
-  reveal(document.getElementById("frostChart").closest(".card"), () => new Chart(document.getElementById("frostChart"), {
-    type: "line",
-    data: {
-      labels: [...Array(12)].map((_, i) => `${i + 1}월`),
-      datasets: ST.map((s, i) => ({
-        label: s.name, data: s.rate.map(v => v * 100), borderColor: COL[i % 6], backgroundColor: COL[i % 6],
-        tension: .35, borderWidth: 2.2, pointRadius: 2.5,
-      })),
-    },
-    options: {
-      maintainAspectRatio: false, animation: { duration: 1600 }, interaction: { mode: "index", intersect: false },
-      scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
-      plugins: {
-        legend: { labels: { usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
-        tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } },
-      },
-    },
-  }));
-  document.getElementById("frostStations").innerHTML = ST.map((s, i) =>
-    `<div class="fs"><b><i style="background:${COL[i % 6]}"></i>${s.name}</b><p>첫서리<span>${mmdd(s.first_avg)}</span></p><p>끝서리<span>${mmdd(s.last_avg)}</span></p></div>`).join("");
+  $("frostStations").innerHTML = `<table><thead><tr><th>지점</th><th>첫서리 평균</th><th>끝서리 평균</th></tr></thead><tbody>`
+    + ST.map((s, i) => `<tr><td><i style="background:${COL[i % 6]}"></i>${s.name}</td><td>${mmdd(s.first_avg)}</td><td>${mmdd(s.last_avg)}</td></tr>`).join("") + `</tbody></table>`;
   const m = fr.metrics || {};
-  document.getElementById("frostMetrics").innerHTML = `<span>평균 첫서리·끝서리 2005년~</span>` +
-    (m.auc != null ? `<span>AUC<b>${m.auc}</b></span>` : "") +
-    (m.f1 != null && m.persistence_f1 != null ? `<span class="cmp">F1<em>단순 지속</em><s>${m.persistence_f1}</s><em>모델</em><b>${m.f1}</b></span>` : "");
+  const cols = [];
+  if (m.auc != null) cols.push(["AUC", m.auc]);
+  if (m.f1 != null) cols.push(["F1", m.f1]);
+  if (m.persistence_f1 != null) cols.push(["F1 단순 지속", m.persistence_f1]);
+  $("frostMetrics").innerHTML = cols.length ? `<table><thead><tr><th>검증</th>${cols.map(c => `<th>${c[0]}</th>`).join("")}</tr></thead><tbody><tr><td>서리 모델</td>${cols.map(c => `<td>${c[1]}</td>`).join("")}</tr></tbody></table>` : "";
 }
 
-document.querySelectorAll(".reveal").forEach(el => reveal(el));
+/* ---------- 시작 ---------- */
+document.querySelectorAll(".sec-head").forEach(el => seen(el, () => el.classList.add("in"), .9));
 
-const soft = p => getJSON(p).catch(() => null);
-soft("data/frost.json").then(fr => {
-  if (fr && fr.stations && fr.stations.length && fr.clf) renderFrost(fr);
-  else document.getElementById("frost").hidden = true;
-});
-Promise.all(["data/latest.json", "data/stats.json", "data/history.json", "data/model.json"].map(getJSON).concat(soft("data/kma_lead.json")))
-  .then(([latest, stats, history, model, kma]) => {
-    renderNow(latest);
-    renderSim(model);
-    renderCompare(stats, kma);
-    renderHistory(history);
-    renderStats(stats);
+const FAIL = `<p class="empty">자료를 불러오지 못했습니다</p>`;
+function unavailable(id) {
+  const w = document.querySelector(`#${id} .wrap`);
+  if (!w) return;
+  [...w.children].filter(c => !c.classList.contains("sec-head")).forEach(c => c.remove());
+  w.insertAdjacentHTML("beforeend", FAIL);
+}
+function guard(id, data, fn) {
+  try {
+    if (!data) throw new Error("no data");
+    fn(data);
+  } catch (e) {
+    console.warn(id, e);
+    if (id === "now") { $("nowList").innerHTML = `<li class="empty" style="cursor:default;animation:none">자료를 불러오지 못했습니다</li>`; }
+    else unavailable(id);
+  }
+}
+
+Promise.all(["latest", "stats", "history", "model", "kma_lead", "frost"].map(n => soft(`data/${n}.json`)))
+  .then(([latest, stats, history, model, kma, frost]) => {
+    guard("now", latest && latest.storms && latest, renderNow);
+    guard("history", history && history.length && history, renderHistory);
+    guard("compare", stats && stats.analysis && stats, s => renderCompare(s, kma));
+    guard("sim", model, renderSim);
+    if (frost && frost.stations && frost.stations.length && frost.clf) guard("frost", frost, renderFrost);
+    else { $("frost").hidden = true; $("navFrost").hidden = true; }
+    guard("stats", stats && stats.korea_by_month && stats.korea_by_year && stats, renderStats);
   });

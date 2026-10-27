@@ -4,121 +4,136 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>태풍 예측</title>
+<script>document.documentElement.classList.add("js")</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-serif-kr@5.0.12/600.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="#">
-    <svg class="spiral" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 20m-3 0a3 3 0 1 0 6 0a6 6 0 1 0-12 0a9 9 0 1 0 18 0a12 12 0 1 0-24 0" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
-    태풍 예측
-  </a>
+  <a class="brand" href="#now">태풍 예측</a>
   <nav>
-    <a href="#now">지금</a>
-    <a href="#sim">직접 예측</a>
-    <a href="#compare">한국 vs 일본</a>
+    <a href="#now">현재 태풍</a>
     <a href="#history">지난 태풍</a>
-    <a href="#frost">서리</a>
+    <a href="#compare">예측 시점 비교</a>
+    <a href="#sim">직접 예측</a>
+    <a href="#frost" id="navFrost">서리</a>
+    <a href="#stats">통계</a>
   </nav>
 </header>
 
 <main>
-<section id="now" class="hero">
-  <div class="swirl" aria-hidden="true"></div>
-  <div class="hero-head reveal">
-    <h1>지금 한국으로 오는 태풍</h1>
-    <p class="asof" id="asof"></p>
-  </div>
-  <div class="now-grid">
-    <div id="nowMap" class="map reveal"></div>
-    <div id="nowList" class="storm-list"></div>
-  </div>
+<section id="now" class="stage">
+  <div id="nowMap" class="map"></div>
+  <aside class="panel" id="nowPanel">
+    <div class="panel-top">
+      <h1>현재 태풍</h1>
+      <span id="asof"></span>
+    </div>
+    <ol id="nowList" class="storm-list"></ol>
+    <details id="goneBox" class="gone-box" hidden>
+      <summary>최근 소멸 <span id="goneN"></span></summary>
+      <ol id="goneList" class="gone-list"></ol>
+    </details>
+  </aside>
 </section>
 
-<section id="sim">
-  <h2 class="reveal">직접 예측</h2>
-  <div class="sim-grid">
-    <div id="simMap" class="map reveal"></div>
-    <div class="sim-panel reveal">
-      <div class="sim-result">
-        <div class="ring" data-c="korea"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="bar"/></svg><div><b id="simK">0%</b><span>한국</span><em id="simKeta"></em></div></div>
-        <div class="ring" data-c="japan"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="bar"/></svg><div><b id="simJ">0%</b><span>일본</span><em id="simJeta"></em></div></div>
-      </div>
-      <p class="pos" id="simPos"></p>
-      <form id="simForm" class="sliders">
-        <label>날짜<input type="date" name="date"></label>
-        <label>최대풍속 <span><output></output>kt</span><input type="range" name="wind" min="20" max="140" step="5" value="65"></label>
-        <label>중심기압 <span><output></output>hPa</span><input type="range" name="pres" min="900" max="1008" step="1" value="970"></label>
-        <label>진행 방향 <span><output></output>°</span><input type="range" name="heading" min="0" max="359" step="5" value="330"></label>
-        <label>이동 속도 <span><output></output>km/h</span><input type="range" name="speed" min="0" max="60" step="1" value="20"></label>
-        <label>발생 후 <span><output></output>일</span><input type="range" name="age" min="0" max="15" step="0.5" value="4"></label>
-        <label>하루 풍속 변화 <span><output></output>kt</span><input type="range" name="dwind" min="-40" max="40" step="5" value="0"></label>
-      </form>
+<section id="history">
+  <div class="wrap">
+    <div class="sec-head"><h2>지난 태풍</h2></div>
+    <div class="hist-bar">
+      <select id="histSel" aria-label="태풍 선택"></select>
+      <button id="play" type="button" aria-label="재생">▶</button>
+      <input id="scrub" type="range" min="0" max="0" value="0" aria-label="시각">
+      <span id="scrubTime"></span>
+    </div>
+    <div class="hist-grid">
+      <div id="histMap" class="map"></div>
+      <div class="chart-box"><canvas id="histChart"></canvas></div>
     </div>
   </div>
 </section>
 
 <section id="compare">
-  <h2 class="reveal">한국은 왜 늦게 아는가</h2>
-  <div class="stat-grid">
-    <div class="stat reveal"><h3>발생부터 도착까지</h3><div class="pair"><p><b data-count="" id="natK"></b><span>시간</span><i>한국</i></p><p><b data-count="" id="natJ"></b><span>시간</span><i>일본</i></p></div></div>
-    <div class="stat reveal"><h3>모델 첫 경보, 도착 전</h3><div class="pair"><p><b id="warnK"></b><span>시간</span><i>한국</i></p><p><b id="warnJ"></b><span>시간</span><i>일본</i></p></div></div>
-    <div class="stat reveal"><h3>도착 직전 48시간 방향 변화</h3><div class="pair"><p><b id="turnK"></b><span class="deg">°</span><i>한국</i></p><p><b id="turnJ"></b><span class="deg">°</span><i>일본</i></p></div></div>
-    <div class="stat reveal"><h3>KMA 추적 시작, JMA보다</h3><div class="pair one"><p><b id="agency"></b><span>시간 늦음</span><i id="agencyRatio"></i></p></div></div>
+  <div class="wrap">
+    <div class="sec-head"><h2>예측 시점 비교</h2></div>
+    <div class="article">
+      <div class="prose" id="prose"></div>
+      <div class="chart-box tall">
+        <h3>도착 전 경보 비율</h3>
+        <canvas id="leadChart"></canvas>
+      </div>
+    </div>
+    <div class="article second">
+      <div id="factors"></div>
+      <div id="metrics"></div>
+    </div>
   </div>
-  <div class="chart-grid">
-    <div class="card reveal"><h3>도착 몇 시간 전에 경보했나</h3><canvas id="leadChart"></canvas></div>
-    <div class="card reveal"><h3>예측에 크게 작용한 요인</h3><canvas id="impChart"></canvas></div>
-  </div>
-  <div class="metrics reveal" id="metrics"></div>
 </section>
 
-<section id="history">
-  <h2 class="reveal">지난 태풍 다시보기</h2>
-  <div class="hist-bar reveal">
-    <select id="histSel"></select>
-    <button id="play" type="button" aria-label="재생">▶</button>
-    <input id="scrub" type="range" min="0" max="0" value="0">
-    <span id="scrubTime"></span>
+<section id="sim">
+  <div class="wrap">
+    <div class="sec-head"><h2>직접 예측</h2></div>
+    <div class="sim-grid">
+      <div id="simMap" class="map"></div>
+      <div class="sim-panel">
+        <div class="readout two">
+          <div class="ro korea"><span class="k">한국</span><b id="simK">0%</b><i class="bar"><u id="simKbar"></u></i><em id="simKeta"></em></div>
+          <div class="ro japan"><span class="k">일본</span><b id="simJ">0%</b><i class="bar"><u id="simJbar"></u></i><em id="simJeta"></em></div>
+        </div>
+        <p class="pos" id="simPos"></p>
+        <form id="simForm" class="sliders">
+          <label>날짜<input type="date" name="date"></label>
+          <label>최대풍속 <span><output></output>kt</span><input type="range" name="wind" min="20" max="140" step="5" value="65"></label>
+          <label>중심기압 <span><output></output>hPa</span><input type="range" name="pres" min="900" max="1008" step="1" value="970"></label>
+          <label>진행 방향 <span><output></output>°</span><input type="range" name="heading" min="0" max="359" step="5" value="330"></label>
+          <label>이동 속도 <span><output></output>km/h</span><input type="range" name="speed" min="0" max="60" step="1" value="20"></label>
+          <label>발생 후 <span><output></output>일</span><input type="range" name="age" min="0" max="15" step="0.5" value="4"></label>
+          <label>하루 풍속 변화 <span><output></output>kt</span><input type="range" name="dwind" min="-40" max="40" step="5" value="0"></label>
+        </form>
+      </div>
+    </div>
   </div>
-  <div class="hist-grid">
-    <div id="histMap" class="map reveal"></div>
-    <div class="card reveal"><canvas id="histChart"></canvas></div>
+</section>
+
+<section id="frost">
+  <div class="wrap">
+    <div class="sec-head"><h2>서리</h2></div>
+    <div class="frost-grid">
+      <div class="sim-panel">
+        <div class="readout">
+          <div class="ro frost"><span class="k">내일 서리 가능일 <small>초상온도 0℃ 이하</small></span><b id="frostP">0%</b><i class="bar"><u id="frostBar"></u></i></div>
+        </div>
+        <form id="frostForm" class="sliders">
+          <label>지점<select name="stn"></select></label>
+          <label>날짜<input type="date" name="date"></label>
+          <label>최저기온 <span><output></output>℃</span><input type="range" name="TA_MIN" min="-15" max="25" step="0.5" value="1"></label>
+          <label>평균기온 <span><output></output>℃</span><input type="range" name="TA_AVG" min="-10" max="30" step="0.5" value="6"></label>
+          <label>최고기온 <span><output></output>℃</span><input type="range" name="TA_MAX" min="-5" max="38" step="0.5" value="12"></label>
+          <label>이슬점 <span><output></output>℃</span><input type="range" name="TD_AVG" min="-25" max="25" step="0.5" value="-3"></label>
+          <label>습도 <span><output></output>%</span><input type="range" name="HM_AVG" min="10" max="100" step="1" value="50"></label>
+          <label>풍속 <span><output></output>m/s</span><input type="range" name="WS_AVG" min="0" max="12" step="0.1" value="1.5"></label>
+          <label>전운량 <span><output></output>/10</span><input type="range" name="CA_TOT" min="0" max="10" step="0.5" value="1"></label>
+        </form>
+      </div>
+      <div class="frost-right">
+        <div class="chart-box"><h3>월별 서리 가능일 비율</h3><canvas id="frostChart"></canvas></div>
+        <div id="frostStations"></div>
+        <div id="frostMetrics"></div>
+      </div>
+    </div>
   </div>
 </section>
 
 <section id="stats">
-  <h2 class="reveal">한국 영향 태풍 통계</h2>
-  <div class="chart-grid">
-    <div class="card reveal"><h3>월별</h3><canvas id="monthChart"></canvas></div>
-    <div class="card reveal"><h3>연도별</h3><canvas id="yearChart"></canvas></div>
-  </div>
-</section>
-<section id="frost">
-  <h2 class="reveal">내일 서리</h2>
-  <div class="frost-grid">
-    <div class="sim-panel reveal">
-      <h3>서리 가능일(초상온도 0℃ 이하)</h3>
-      <div class="sim-result one">
-        <div class="ring" data-c="frost"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="bar"/></svg><div><b id="frostP">0%</b><span>내일</span></div></div>
-      </div>
-      <form id="frostForm" class="sliders">
-        <label>지점<select name="stn"></select></label>
-        <label>날짜<input type="date" name="date"></label>
-        <label>최저기온 <span><output></output>℃</span><input type="range" name="TA_MIN" min="-15" max="25" step="0.5" value="1"></label>
-        <label>평균기온 <span><output></output>℃</span><input type="range" name="TA_AVG" min="-10" max="30" step="0.5" value="6"></label>
-        <label>최고기온 <span><output></output>℃</span><input type="range" name="TA_MAX" min="-5" max="38" step="0.5" value="12"></label>
-        <label>이슬점 <span><output></output>℃</span><input type="range" name="TD_AVG" min="-25" max="25" step="0.5" value="-3"></label>
-        <label>습도 <span><output></output>%</span><input type="range" name="HM_AVG" min="10" max="100" step="1" value="50"></label>
-        <label>풍속 <span><output></output>m/s</span><input type="range" name="WS_AVG" min="0" max="12" step="0.1" value="1.5"></label>
-        <label>전운량 <span><output></output>/10</span><input type="range" name="CA_TOT" min="0" max="10" step="0.5" value="1"></label>
-      </form>
+  <div class="wrap">
+    <div class="sec-head"><h2>통계</h2></div>
+    <div class="stats-grid">
+      <div id="monthBox"><h3>한국 영향 태풍, 월별</h3><div id="monthList"></div></div>
+      <div class="chart-box"><h3>한국 영향 태풍, 연도별</h3><canvas id="yearChart"></canvas></div>
     </div>
-    <div class="card reveal"><h3>월별 서리 가능일 비율</h3><canvas id="frostChart"></canvas></div>
   </div>
-  <div class="frost-stations reveal" id="frostStations"></div>
-  <div class="metrics reveal" id="frostMetrics"></div>
 </section>
 </main>
 <footer class="foot">자료 출처: IBTrACS · 気象庁(일본 기상청) · 기상청</footer>
