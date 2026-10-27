@@ -43,12 +43,13 @@ h3 { margin: 0 0 16px; font-size: 15px; font-weight: 700; color: var(--muted); }
 .badge.live { background: rgba(255,93,108,.15); color: var(--korea); }
 .badge.live::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor; animation: blink 1.4s infinite; vertical-align: 1px; }
 .probs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.prob { padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.03); }
+.prob { display: flex; flex-direction: column; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.03); }
+.nw { white-space: nowrap; }
 .prob span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-.prob strong { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.prob em { display: block; font-style: normal; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.prob strong { margin-bottom: 8px; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.prob em { display: block; font-style: normal; font-size: 12px; color: var(--muted); margin: -6px 0 8px; }
 .prob.korea strong { color: var(--korea); } .prob.japan strong { color: var(--japan); }
-.meter { height: 4px; margin-top: 8px; border-radius: 2px; background: #1a2338; overflow: hidden; }
+.meter { flex-shrink: 0; height: 4px; margin-top: auto; border-radius: 2px; background: #1a2338; overflow: hidden; }
 .meter i { display: block; height: 100%; width: 0; border-radius: 2px; transition: width 1.2s cubic-bezier(.2,.7,.2,1); }
 .korea .meter i { background: var(--korea); } .japan .meter i { background: var(--japan); }
 .storm-time { margin-top: 12px; font-size: 13px; color: var(--muted); }
@@ -59,7 +60,7 @@ h3 { margin: 0 0 16px; font-size: 15px; font-weight: 700; color: var(--muted); }
 .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 .ring circle { fill: none; stroke-width: 9; }
 .ring .track { stroke: #1a2338; }
-.ring .bar { stroke-linecap: round; stroke-dasharray: 326.7; stroke-dashoffset: 326.7; transition: stroke-dashoffset .7s cubic-bezier(.2,.7,.2,1); }
+.ring .bar { transition: stroke-dashoffset .7s cubic-bezier(.2,.7,.2,1), opacity .3s; stroke-linecap: round; stroke-dasharray: 326.7; stroke-dashoffset: 326.7; }
 .ring[data-c=korea] .bar { stroke: var(--korea); } .ring[data-c=japan] .bar { stroke: var(--japan); }
 .ring > div { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .ring b { font-size: clamp(26px, 3.4vw, 34px); font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -85,6 +86,7 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 .pair p { margin: 0; }
 .pair b { font-size: clamp(30px, 3.6vw, 44px); font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .pair span { margin-left: 3px; font-size: 14px; color: var(--muted); font-weight: 600; }
+.pair span.deg { margin-left: 0; font-size: .6em; vertical-align: top; position: relative; top: .25em; }
 .pair i { display: block; font-style: normal; font-size: 13px; font-weight: 700; margin-top: 4px; }
 .pair p:nth-child(1) b, .pair p:nth-child(1) i { color: var(--korea); }
 .pair p:nth-child(2) b, .pair p:nth-child(2) i { color: var(--japan); }
@@ -119,7 +121,11 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 @keyframes blink { 50% { opacity: .25; } }
 @keyframes pulse { 70% { box-shadow: 0 0 0 16px rgba(255,93,108,0); } 100% { box-shadow: 0 0 0 0 rgba(255,93,108,0); } }
 
-@media (max-width: 1080px) { .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1080px) {
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hist-grid { grid-template-columns: minmax(0, 1fr); }
+  .hist-grid .card canvas { height: 340px !important; }
+}
 @media (max-width: 860px) {
   .now-grid, .sim-grid, .hist-grid, .chart-grid { grid-template-columns: minmax(0, 1fr); }
   .map { height: 400px; }

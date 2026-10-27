@@ -86,7 +86,7 @@ function renderNow(latest) {
     const layer = L.layerGroup().addTo(map);
     drawTrack(layer, s.track);
     const last = s.track[s.track.length - 1];
-    bounds.push(...s.track.map(t => [t[1], t[2]]));
+    if (live) bounds.push(...s.track.map(t => [t[1], t[2]]));
     L.marker([last[1], last[2]], { icon: live ? tcIcon(36) : L.divIcon({ className: "", html: "" }) })
       .bindTooltip(s.name, { direction: "top", offset: [0, -14] }).addTo(layer);
 
@@ -97,7 +97,7 @@ function renderNow(latest) {
       const v = s[c];
       if (v.arrived) return `<div class="prob ${c}"><span>${label}</span><strong>도달</strong><em>${kst(v.arrived)}</em></div>`;
       if (!live) return `<div class="prob ${c}"><span>${label}</span><strong>–</strong></div>`;
-      return `<div class="prob ${c}"><span>${label} 5일 내</span><strong>${pct(v.p)}</strong>${v.p >= .2 ? `<em>약 ${Math.max(0, v.hours)}시간 뒤 · ${kst(v.eta)}</em>` : ""}<div class="meter"><i data-w="${v.p * 100}"></i></div></div>`;
+      return `<div class="prob ${c}"><span>${label} 5일 내</span><strong>${pct(v.p)}</strong>${v.p >= .2 ? `<em>약 ${Math.max(0, v.hours)}시간 뒤 · <span class="nw">${kst(v.eta)}</span></em>` : ""}<div class="meter"><i data-w="${v.p * 100}"></i></div></div>`;
     };
     card.innerHTML = `<div class="storm-head"><b>${s.name === "UNNAMED" ? "이름 없음" : s.name}</b><span class="badge ${live ? "live" : ""}">${live ? "활동 중" : "소멸"}</span></div>
       <div class="probs">${prob("korea", "한국")}${prob("japan", "일본")}</div>
@@ -105,7 +105,7 @@ function renderNow(latest) {
     card.addEventListener("click", () => map.flyToBounds(s.track.map(t => [t[1], t[2]]), { padding: [40, 40], duration: 1 }));
     list.appendChild(card);
   });
-  if (bounds.length) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 5 });
+  if (bounds.length) map.fitBounds([...bounds, ...KOREA_CITIES], { padding: [30, 30], maxZoom: 5 });
   setTimeout(() => list.querySelectorAll(".meter i").forEach(i => i.style.width = i.dataset.w + "%"), 400);
 }
 
@@ -118,7 +118,11 @@ function renderSim(model) {
   let pos = [24, 128];
   const marker = L.marker(pos, { icon: tcIcon(40), draggable: true }).addTo(map);
   const path = L.polyline([], { color: "#fff", weight: 2, dashArray: "6 8", opacity: .6 }).addTo(map);
-  const ring = (c, p) => document.querySelector(`.ring[data-c=${c}] .bar`).style.strokeDashoffset = 326.7 * (1 - p);
+  const ring = (c, p) => {
+    const bar = document.querySelector(`.ring[data-c=${c}] .bar`);
+    bar.style.strokeDashoffset = 326.7 * (1 - p);
+    bar.style.opacity = p < .01 ? 0 : 1;
+  };
 
   function update() {
     form.querySelectorAll("label").forEach(l => {
@@ -267,7 +271,7 @@ function renderHistory(history) {
       options: {
         maintainAspectRatio: false, animation: { duration: 1200 }, interaction: { mode: "nearest", axis: "x", intersect: false },
         scales: {
-          x: { type: "linear", ticks: { callback: v => v === 0 ? "도착" : `${v > 0 ? "+" : ""}${v}h`, stepSize: 24 } },
+          x: { type: "linear", ticks: { callback: v => v === 0 ? "도착" : `${v > 0 ? "+" : ""}${v}h`, stepSize: 24, maxRotation: 0, autoSkip: true } },
           y: { min: 0, max: 100, ticks: { callback: v => v + "%" } },
         },
         plugins: { tooltip: { callbacks: { title: i => `도착 ${i[0].parsed.x}시간`, label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
@@ -276,11 +280,12 @@ function renderHistory(history) {
     setFrame(0);
   }
 
-  function stop() { clearInterval(timer); timer = null; play.textContent = "▶"; }
+  function stop() { clearInterval(timer); timer = null; play.textContent = "▶"; play.setAttribute("aria-label", "재생"); }
   play.addEventListener("click", () => {
     if (timer) return stop();
     if (+scrub.value >= +scrub.max) scrub.value = 0;
     play.textContent = "❚❚";
+    play.setAttribute("aria-label", "일시정지");
     timer = setInterval(() => {
       if (+scrub.value >= +scrub.max) return stop();
       scrub.value = +scrub.value + 1;
@@ -298,7 +303,7 @@ function renderStats(stats) {
   reveal(document.getElementById("monthChart").closest(".card"), () => new Chart(document.getElementById("monthChart"), {
     type: "bar",
     data: { labels: [...Array(12)].map((_, i) => `${i + 1}월`), datasets: [{ data: stats.korea_by_month, backgroundColor: C.korea, borderRadius: 6 }] },
-    options: { maintainAspectRatio: false, animation: { duration: 1400 }, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } } } },
+    options: { maintainAspectRatio: false, animation: { duration: 1400 }, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } } } },
   }));
   reveal(document.getElementById("yearChart").closest(".card"), () => new Chart(document.getElementById("yearChart"), {
     type: "bar",
