@@ -9,7 +9,7 @@ SEOUL = (37.57, 126.98)
 TOKYO = (35.68, 139.69)
 
 FEATURES = ["LAT", "LON", "wind", "pres", "dwind_24", "dlat_6", "dlon_6", "dlat_24", "dlon_24",
-            "speed_kmh", "heading", "age_h", "month", "doy", "DIST2LAND",
+            "speed_kmh", "heading", "age_h", "month", "doy",
             "dist_seoul", "bearing_seoul", "dist_tokyo", "bearing_tokyo"]
 
 

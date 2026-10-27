@@ -1,16 +1,16 @@
 {
   "korea": {
-    "auc": 0.9111,
-    "brier": 0.035,
-    "arrival_mae_h": 14.5,
+    "auc": 0.9072,
+    "brier": 0.0357,
+    "arrival_mae_h": 14.6,
     "train_rows": 77616,
     "test_rows": 11731,
     "test_storms_hit": 28
   },
   "japan": {
-    "auc": 0.9008,
-    "brier": 0.0823,
-    "arrival_mae_h": 15.8,
+    "auc": 0.9011,
+    "brier": 0.0824,
+    "arrival_mae_h": 15.9,
     "train_rows": 72437,
     "test_rows": 10754,
     "test_storms_hit": 90

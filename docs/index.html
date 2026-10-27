@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>태풍 예측</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#">
+    <svg class="spiral" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 20m-3 0a3 3 0 1 0 6 0a6 6 0 1 0-12 0a9 9 0 1 0 18 0a12 12 0 1 0-24 0" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+    태풍 예측
+  </a>
+  <nav>
+    <a href="#now">지금</a>
+    <a href="#sim">직접 예측</a>
+    <a href="#compare">한국 vs 일본</a>
+    <a href="#history">지난 태풍</a>
+  </nav>
+</header>
+
+<main>
+<section id="now" class="hero">
+  <div class="swirl" aria-hidden="true"></div>
+  <div class="hero-head reveal">
+    <h1>지금 한국으로 오는 태풍</h1>
+    <p class="asof" id="asof"></p>
+  </div>
+  <div class="now-grid">
+    <div id="nowMap" class="map reveal"></div>
+    <div id="nowList" class="storm-list"></div>
+  </div>
+</section>
+
+<section id="sim">
+  <h2 class="reveal">직접 예측</h2>
+  <div class="sim-grid">
+    <div id="simMap" class="map reveal"></div>
+    <div class="sim-panel reveal">
+      <div class="sim-result">
+        <div class="ring" data-c="korea"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="bar"/></svg><div><b id="simK">0%</b><span>한국</span><em id="simKeta"></em></div></div>
+        <div class="ring" data-c="japan"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="bar"/></svg><div><b id="simJ">0%</b><span>일본</span><em id="simJeta"></em></div></div>
+      </div>
+      <p class="pos" id="simPos"></p>
+      <form id="simForm" class="sliders">
+        <label>날짜<input type="date" name="date"></label>
+        <label>최대풍속 <span><output></output>kt</span><input type="range" name="wind" min="20" max="140" step="5" value="65"></label>
+        <label>중심기압 <span><output></output>hPa</span><input type="range" name="pres" min="900" max="1008" step="1" value="970"></label>
+        <label>진행 방향 <span><output></output>°</span><input type="range" name="heading" min="0" max="359" step="5" value="330"></label>
+        <label>이동 속도 <span><output></output>km/h</span><input type="range" name="speed" min="0" max="60" step="1" value="20"></label>
+        <label>발생 후 <span><output></output>일</span><input type="range" name="age" min="0" max="15" step="0.5" value="4"></label>
+        <label>하루 풍속 변화 <span><output></output>kt</span><input type="range" name="dwind" min="-40" max="40" step="5" value="0"></label>
+      </form>
+    </div>
+  </div>
+</section>
+
+<section id="compare">
+  <h2 class="reveal">한국은 왜 늦게 아는가</h2>
+  <div class="stat-grid">
+    <div class="stat reveal"><h3>발생부터 도착까지</h3><div class="pair"><p><b data-count="" id="natK"></b><span>시간</span><i>한국</i></p><p><b data-count="" id="natJ"></b><span>시간</span><i>일본</i></p></div></div>
+    <div class="stat reveal"><h3>모델 첫 경보, 도착 전</h3><div class="pair"><p><b id="warnK"></b><span>시간</span><i>한국</i></p><p><b id="warnJ"></b><span>시간</span><i>일본</i></p></div></div>
+    <div class="stat reveal"><h3>도착 직전 48시간 방향 변화</h3><div class="pair"><p><b id="turnK"></b><span>°</span><i>한국</i></p><p><b id="turnJ"></b><span>°</span><i>일본</i></p></div></div>
+    <div class="stat reveal"><h3>KMA 추적 시작, JMA보다</h3><div class="pair one"><p><b id="agency"></b><span>시간 늦음</span><i id="agencyRatio"></i></p></div></div>
+  </div>
+  <div class="chart-grid">
+    <div class="card reveal"><h3>도착 몇 시간 전에 경보했나</h3><canvas id="leadChart"></canvas></div>
+    <div class="card reveal"><h3>예측에 크게 작용한 요인</h3><canvas id="impChart"></canvas></div>
+  </div>
+  <div class="metrics reveal" id="metrics"></div>
+</section>
+
+<section id="history">
+  <h2 class="reveal">지난 태풍 다시보기</h2>
+  <div class="hist-bar reveal">
+    <select id="histSel"></select>
+    <button id="play" type="button" aria-label="재생">▶</button>
+    <input id="scrub" type="range" min="0" max="0" value="0">
+    <span id="scrubTime"></span>
+  </div>
+  <div class="hist-grid">
+    <div id="histMap" class="map reveal"></div>
+    <div class="card reveal"><canvas id="histChart"></canvas></div>
+  </div>
+</section>
+
+<section id="stats">
+  <h2 class="reveal">한국 영향 태풍 통계</h2>
+  <div class="chart-grid">
+    <div class="card reveal"><h3>월별</h3><canvas id="monthChart"></canvas></div>
+    <div class="card reveal"><h3>연도별</h3><canvas id="yearChart"></canvas></div>
+  </div>
+</section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="model.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

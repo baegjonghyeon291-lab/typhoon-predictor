@@ -5,3 +5,4 @@ __pycache__/
 data/raw/
 *.ipynb_checkpoints
 .DS_Store
+.playwright-mcp/
