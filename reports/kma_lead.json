@@ -1,0 +1,259 @@
+{
+  "source": "기상청 API허브 typ_lst.php + typ_data.php(mode=3)",
+  "years": [
+    2001,
+    2026
+  ],
+  "kma_storms": 639,
+  "kma_storms_with_issue_records": 639,
+  "kma_storms_with_forecast_points": 639,
+  "matched_ibtracs": 636,
+  "match_failed": 3,
+  "match_failed_list": [
+    {
+      "YY": 2026,
+      "TYP": 11,
+      "name": "HAISHEN"
+    },
+    {
+      "YY": 2026,
+      "TYP": 14,
+      "name": "KUJIRA"
+    },
+    {
+      "YY": 2026,
+      "TYP": 20,
+      "name": "GAENARI"
+    }
+  ],
+  "kma_first_issue_vs_jma_first_record": {
+    "all": {
+      "n": 609,
+      "median_h": 30.0,
+      "mean_h": 37.6,
+      "p25_h": 24.0,
+      "p75_h": 48.0,
+      "kma_later_ratio": 0.992,
+      "same_time_ratio": 0.005
+    },
+    "since_2015": {
+      "n": 279,
+      "median_h": 30.0,
+      "mean_h": 38.6,
+      "p25_h": 24.0,
+      "p75_h": 48.0
+    },
+    "by_period": {
+      "2001-2007": {
+        "n": 172,
+        "median_h": 36.0,
+        "mean_h": 38.8,
+        "p25_h": 24.0,
+        "p75_h": 48.0
+      },
+      "2008-2014": {
+        "n": 158,
+        "median_h": 30.0,
+        "mean_h": 34.8,
+        "p25_h": 24.0,
+        "p75_h": 42.0
+      },
+      "2015-2020": {
+        "n": 161,
+        "median_h": 30.0,
+        "mean_h": 39.2,
+        "p25_h": 24.0,
+        "p75_h": 54.0
+      },
+      "2021-2026": {
+        "n": 118,
+        "median_h": 36.0,
+        "mean_h": 37.6,
+        "p25_h": 24.0,
+        "p75_h": 48.0
+      }
+    },
+    "note": "양수 = 기상청 첫 발표(분석시각)가 IBTrACS JMA(TOKYO) 첫 기록보다 늦음. JMA 첫 기록은 열대저압부 단계부터 시작될 수 있음."
+  },
+  "korea_lead": {
+    "definition": "도착 = IBTrACS 에서 한국 6개 도시 200km 안 첫 시각(in_korea). 대상 = in_korea 태풍 중 매칭 성공·도착 전 기록 있음.",
+    "all_years": {
+      "first_issue": {
+        "storms": 62,
+        "median_warning_lead_h": 133.5,
+        "warned_24h_before": 0.984,
+        "warned_48h_before": 0.935,
+        "warned_72h_before": 0.855,
+        "warned_96h_before": 0.726,
+        "warned_120h_before": 0.548,
+        "raw": {
+          "n": 62,
+          "median_h": 133.5,
+          "mean_h": 140.0,
+          "p25_h": 85.5,
+          "p75_h": 186.75
+        }
+      },
+      "first_fcst_track_in_korea": {
+        "storms": 62,
+        "median_warning_lead_h": 48.0,
+        "warned_24h_before": 0.774,
+        "warned_48h_before": 0.565,
+        "warned_72h_before": 0.339,
+        "warned_96h_before": 0.242,
+        "warned_120h_before": 0.048,
+        "never_forecast_ratio": 0.145,
+        "raw": {
+          "n": 53,
+          "median_h": 60.0,
+          "mean_h": 65.1,
+          "p25_h": 36.0,
+          "p75_h": 96.0
+        }
+      },
+      "first_fcst_track_in_korea_interp1h": {
+        "storms": 62,
+        "median_warning_lead_h": 51.0,
+        "warned_24h_before": 0.774,
+        "warned_48h_before": 0.613,
+        "warned_72h_before": 0.339,
+        "warned_96h_before": 0.242,
+        "warned_120h_before": 0.048,
+        "never_forecast_ratio": 0.145
+      }
+    },
+    "since_2015_same_as_model": {
+      "first_issue": {
+        "storms": 27,
+        "median_warning_lead_h": 126.0,
+        "warned_24h_before": 0.963,
+        "warned_48h_before": 0.889,
+        "warned_72h_before": 0.889,
+        "warned_96h_before": 0.741,
+        "warned_120h_before": 0.519,
+        "raw": {
+          "n": 27,
+          "median_h": 126.0,
+          "mean_h": 141.8,
+          "p25_h": 90.0,
+          "p75_h": 181.5
+        }
+      },
+      "first_fcst_track_in_korea": {
+        "storms": 27,
+        "median_warning_lead_h": 78.0,
+        "warned_24h_before": 0.815,
+        "warned_48h_before": 0.667,
+        "warned_72h_before": 0.556,
+        "warned_96h_before": 0.444,
+        "warned_120h_before": 0.111,
+        "never_forecast_ratio": 0.111,
+        "raw": {
+          "n": 24,
+          "median_h": 93.0,
+          "mean_h": 79.2,
+          "p25_h": 45.0,
+          "p75_h": 109.5
+        }
+      },
+      "first_fcst_track_in_korea_interp1h": {
+        "storms": 27,
+        "median_warning_lead_h": 78.0,
+        "warned_24h_before": 0.815,
+        "warned_48h_before": 0.667,
+        "warned_72h_before": 0.556,
+        "warned_96h_before": 0.444,
+        "warned_120h_before": 0.111,
+        "never_forecast_ratio": 0.111
+      }
+    },
+    "eff123_storms_total": 78,
+    "eff123_and_in_korea": 47
+  },
+  "our_model_korea_full": {
+    "storms": 28,
+    "median_warning_lead_h": 33.0,
+    "warned_24h_before": 0.714,
+    "warned_48h_before": 0.214,
+    "warned_72h_before": 0.143,
+    "warned_96h_before": 0.107,
+    "warned_120h_before": 0.107
+  },
+  "eff_vs_in_korea": {
+    "matched_storms": 636,
+    "agreement_ratio": 0.928,
+    "both_yes": 47,
+    "eff_only": 31,
+    "in_korea_only": 15,
+    "both_no": 543,
+    "by_eff": {
+      "1": {
+        "storms": 21,
+        "in_korea_ratio": 1.0
+      },
+      "2": {
+        "storms": 57,
+        "in_korea_ratio": 0.456
+      },
+      "4": {
+        "storms": 558,
+        "in_korea_ratio": 0.027
+      }
+    },
+    "eff_only_list": [
+      "2001 PABUK EFF2",
+      "2003 LINFA EFF2",
+      "2003 ETAU EFF2",
+      "2004 CHABA EFF2",
+      "2004 SONGDA EFF2",
+      "2007 MAN-YI EFF2",
+      "2007 USAGI EFF2",
+      "2011 MEARI EFF2",
+      "2011 MUIFA EFF2",
+      "2011 TALAS EFF2",
+      "2014 NEOGURI EFF2",
+      "2014 HALONG EFF2",
+      "2014 VONGFONG EFF2",
+      "2015 NANGKA EFF2",
+      "2015 HALOLA EFF2",
+      "2016 MALAKAS EFF2",
+      "2017 NANMADOL EFF2",
+      "2017 NORU EFF2",
+      "2017 TALIM EFF2",
+      "2018 RUMBIA EFF2",
+      "2018 TRAMI EFF2",
+      "2019 LEKIMA EFF2",
+      "2019 KROSA EFF2",
+      "2020 BAVI EFF2",
+      "2021 LUPIT EFF2",
+      "2022 AERE EFF2",
+      "2022 SONGDA EFF2",
+      "2022 NANMADOL EFF2",
+      "2024 SHANSHAN EFF2",
+      "2026 JANGMI EFF2",
+      "2026 CHAMPI EFF2"
+    ],
+    "in_korea_only_list": [
+      "2001 CHEBI EFF4",
+      "2005 KHANUN EFF4",
+      "2006 CHANCHU EFF4",
+      "2007 PABUK EFF4",
+      "2009 MORAKOT EFF4",
+      "2010 MERANTI EFF4",
+      "2011 KULAP EFF4",
+      "2014 FUNG-WONG EFF4",
+      "2015 SOUDELOR EFF4",
+      "2016 NAMTHEUN EFF4",
+      "2016 MERANTI EFF4",
+      "2018 LEEPI EFF4",
+      "2020 HAGUPIT EFF4",
+      "2024 PULASAN EFF4",
+      "2024 KONG-REY EFF4"
+    ]
+  },
+  "notes": [
+    "기상청 발표 시각은 TYP_TM(분석시각, UTC). 실제 공개 시각은 이보다 늦다.",
+    "선행시간 0 이하·예측 없음은 0으로 두고 비율 계산(우리 모델 warning_lead 와 같은 방식). raw 는 음수 포함 원값.",
+    "first_fcst_track_in_korea: 예측점(FT=1) 중 한국 6개 도시 200km 안 점이 처음 나온 발표. interp1h 는 점 사이 직선 보간."
+  ]
+}

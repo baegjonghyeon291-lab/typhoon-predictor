@@ -8,9 +8,9 @@
    예비 경로 = 공공데이터포털 '기상청_태풍정보 조회서비스' (키: DATA_GO_KR_KEY, --via datagokr)
      - getTyphoonInfo(fromTmFc, toTmFc) 로 통보문 목록, getTyphoonFcst(tmFc, typSeq) 로 예상 진로
    저장: data/kma/typhoon/raw/...  (원문 그대로)
-         data/kma/kma_typhoon_list.csv      태풍 목록
-         data/kma/kma_typhoon_fcst.csv      분석+예측 전 행
-         data/kma/kma_first_forecast.csv    태풍별 첫 예보 발표(첫 SEQ)의 시각과 예상 진로 요약
+         data/kma/typhoon/kma_typhoon_list.csv      태풍 목록 (EFF 1상륙 2직접 3간접 4없음, 시각 UTC)
+         data/kma/typhoon/kma_typhoon_fcst.csv      분석(FT=0)+예측(FT=1) 전 행
+         data/kma/typhoon/kma_first_forecast.csv    태풍별 첫 발표(첫 SEQ) 시각과 첫 예측 진로 요약
 
 2) asos : 종관기상관측(ASOS) 일자료 — 공공데이터포털 '기상청_지상(종관, ASOS) 일자료 조회서비스'
    (키: DATA_GO_KR_KEY)
@@ -60,116 +60,134 @@ DGK_GUIDE = """DATA_GO_KR_KEY 발급 방법 (공공데이터포털):
   3) 마이페이지 > 데이터활용 > Open API > 활용신청 현황 에서 '일반 인증키(Decoding)' 복사
   4) .env 에  DATA_GO_KR_KEY=인증키"""
 
+# 실제 응답(help=1 머리말, 2026-10 확인) 기준 열 순서. 쉼표 구분, 줄 끝은 ",="
 HUB_LST_COLS = ["YY", "SEQ", "NOW", "EFF", "TM_ST", "TM_ED", "TYP_NAME", "TYP_EN", "REM"]
 HUB_DATA_COLS = ["FT", "YY", "TYP", "SEQ", "TMD", "TYP_TM", "FT_TM", "LAT", "LON", "DIR", "SP",
-                 "PS", "WS", "RAD15", "RAD25", "RAD", "ED15", "ER15", "ED25", "ER25", "LOC"]
+                 "PS", "WS", "RAD15", "RAD25", "RAD", "ED15", "ER15", "LOC", "ED25", "ER25"]
 
 
 # ---------------------------------------------------------------- 공통
-def get(url, params, tries=4):
+def _mask(text, params):
+    for k in ("authKey", "serviceKey"):
+        v = params.get(k)
+        if v:
+            text = str(text).replace(str(v), "***")
+    return text
+
+
+def get(url, params, tries=5):
     last = None
     for i in range(tries):
         try:
             r = requests.get(url, params=params, timeout=60)
-            if r.status_code == 401:
-                sys.exit(f"[인증 실패] 키가 틀렸거나 해당 API 활용신청이 안 되어 있습니다.\n응답: {r.text[:300]}")
-            if r.status_code == 429:
+            if r.status_code in (401, 403):
+                sys.exit(f"[인증 실패] 키가 틀렸거나 해당 API 활용신청이 안 되어 있습니다.\n"
+                         f"응답: {_mask(r.text[:300], params)}")
+            if r.status_code == 429 or r.status_code >= 500:
+                last = f"HTTP {r.status_code}"
                 time.sleep(5 * (i + 1))
                 continue
             r.raise_for_status()
             return r
         except requests.RequestException as e:
-            last = e
-            time.sleep(2 * (i + 1))
+            last = _mask(e, params)
+            time.sleep(3 * (i + 1))
     raise RuntimeError(f"요청 실패: {url} {last}")
 
 
-def parse_hub_text(text, default_cols):
-    """API허브 typ01 텍스트(#으로 시작하는 머리말 + 자료줄)를 DataFrame 으로.
-    머리말에 변수명 줄이 있으면 그걸 쓰고, 없으면 문서의 순서(default_cols)를 쓴다."""
-    header = None
+def parse_hub_text(text, cols, free_col):
+    """API허브 typ01 텍스트(# 머리말 + 쉼표 구분 자료줄, 끝 ",=")를 DataFrame 으로.
+    free_col(REM·LOC) 안에 쉼표가 들어가도 앞뒤 고정 칸 수로 잘라 합친다."""
+    k = cols.index(free_col)
+    n_after = len(cols) - k - 1
     rows = []
     for line in text.splitlines():
         s = line.strip()
-        if not s:
+        if not s or s.startswith("#"):
             continue
-        if s.startswith("#"):
-            toks = s.lstrip("#").replace(",", " ").split()
-            if len(toks) >= 4 and toks[0] in default_cols and sum(t in default_cols for t in toks) >= 3:
-                header = toks
-            continue
-        sep = "," if "," in s else None
-        vals = [v.strip() for v in s.split(sep)]
-        vals = [v for v in vals if v != ""] if sep is None else vals
-        if vals and vals[-1] == "=":  # 줄 끝 표시
-            vals = vals[:-1]
-        rows.append(vals)
-    cols = header or default_cols
-    fixed = []
-    for v in rows:
-        if len(v) > len(cols):  # 마지막 칸(위치/비고)에 공백이 들어간 경우 합침
-            v = v[:len(cols) - 1] + [" ".join(v[len(cols) - 1:])]
-        fixed.append(v + [None] * (len(cols) - len(v)))
-    return pd.DataFrame(fixed, columns=cols)
+        v = [x.strip() for x in s.split(",")]
+        if v and v[-1] == "=":
+            v = v[:-1]
+        if len(v) < len(cols):
+            v = v + [None] * (len(cols) - len(v))
+        elif len(v) > len(cols):
+            tail = v[len(v) - n_after:] if n_after else []
+            v = v[:k] + [",".join(v[k:len(v) - n_after])] + tail
+        rows.append(v)
+    return pd.DataFrame(rows, columns=cols)
 
 
 # ---------------------------------------------------------------- 태풍 (API허브)
-def typhoon_hub(years, key):
+def typhoon_hub(years, key, pause=0.3):
     raw = OUT / "typhoon" / "raw"
     raw.mkdir(parents=True, exist_ok=True)
+    this_year = dt.date.today().year
     lists, fcsts = [], []
     for y in years:
         p = raw / f"typ_lst_{y}.txt"
-        if not p.exists() or y >= dt.date.today().year:
+        if not p.exists() or y >= this_year:
             r = get(f"{HUB}/typ_lst.php", {"YY": y, "disp": 1, "help": 0, "authKey": key})
             p.write_text(r.text, encoding="utf-8")
-        lst = parse_hub_text(p.read_text(encoding="utf-8"), HUB_LST_COLS)
+            time.sleep(pause)
+        lst = parse_hub_text(p.read_text(encoding="utf-8"), HUB_LST_COLS, "REM")
         if lst.empty:
             print(f"  {y}: 태풍 목록 없음")
             continue
         lists.append(lst)
-        print(f"  {y}: 태풍 {len(lst)}개")
-        for seq in lst["SEQ"].dropna().unique():
-            q = raw / f"typ_data_{y}_{int(seq):02d}.txt"
-            if not q.exists() or y >= dt.date.today().year:
+        n_rows = 0
+        for _, t in lst.iterrows():
+            seq = int(t["SEQ"])
+            q = raw / f"typ_data_{y}_{seq:02d}.txt"
+            if not q.exists() or (y >= this_year and str(t["NOW"]) == "1") or q.stat().st_size < 200:
                 r = get(f"{HUB}/typ_data.php",
-                        {"YY": y, "typ": int(seq), "mode": 3, "disp": 1, "help": 0, "authKey": key})
+                        {"YY": y, "typ": seq, "mode": 3, "disp": 1, "help": 0, "authKey": key})
                 q.write_text(r.text, encoding="utf-8")
-                time.sleep(0.2)
-            d = parse_hub_text(q.read_text(encoding="utf-8"), HUB_DATA_COLS)
+                time.sleep(pause)
+            d = parse_hub_text(q.read_text(encoding="utf-8"), HUB_DATA_COLS, "LOC")
+            n_rows += len(d)
             if not d.empty:
                 fcsts.append(d)
+        print(f"  {y}: 태풍 {len(lst)}개, 분석·예측 {n_rows}행")
     return (pd.concat(lists, ignore_index=True) if lists else pd.DataFrame(),
             pd.concat(fcsts, ignore_index=True) if fcsts else pd.DataFrame())
 
 
-def first_forecast_hub(f):
-    """태풍별 첫 발표(가장 작은 발표번호 SEQ)의 분석시각과 예측 진로를 한 줄로 요약."""
+def first_forecast_hub(f, lst=None):
+    """태풍별 기상청 첫 발표(가장 작은 발표번호 SEQ)의 분석시각(UTC)과,
+    예측 진로가 들어 있는 첫 발표의 예측점 요약."""
     if f.empty:
         return f
     f = f.copy()
-    for c in ["FT", "YY", "TYP", "SEQ", "TMD"]:
-        f[c] = pd.to_numeric(f[c], errors="coerce")
-    for c in ["LAT", "LON"]:
+    for c in ["FT", "YY", "TYP", "SEQ", "TMD", "LAT", "LON"]:
         f[c] = pd.to_numeric(f[c], errors="coerce")
     out = []
     for (yy, typ), g in f.groupby(["YY", "TYP"]):
-        pred = g[g["FT"] == 1]
-        if pred.empty:
-            continue
-        s0 = pred["SEQ"].min()
-        p0 = pred[pred["SEQ"] == s0].sort_values("TMD")
+        s0 = g["SEQ"].min()
         row = {"YY": int(yy), "TYP": int(typ), "first_seq": int(s0),
-               "first_issue_tm_utc": p0["TYP_TM"].iloc[0],
-               "first_seq_overall": int(g["SEQ"].min())}
-        for _, r in p0.iterrows():
-            h = int(r["TMD"]) if pd.notna(r["TMD"]) else None
-            if h is None:
-                continue
-            row[f"lat_{h:03d}h"] = r["LAT"]
-            row[f"lon_{h:03d}h"] = r["LON"]
+               "first_issue_tm_utc": str(g.loc[g["SEQ"] == s0, "TYP_TM"].iloc[0]),
+               "n_issues": int(g["SEQ"].nunique()),
+               "last_issue_tm_utc": str(g.loc[g["SEQ"] == g["SEQ"].max(), "TYP_TM"].iloc[0])}
+        pred = g[g["FT"] == 1]
+        row["n_issues_with_fcst"] = int(pred["SEQ"].nunique())
+        if not pred.empty:
+            s1 = pred["SEQ"].min()
+            p1 = pred[pred["SEQ"] == s1].sort_values("TMD")
+            row["first_fcst_seq"] = int(s1)
+            row["first_fcst_issue_tm_utc"] = str(p1["TYP_TM"].iloc[0])
+            row["first_fcst_max_tmd_h"] = int(p1["TMD"].max())
+            for _, r in p1.iterrows():
+                h = int(r["TMD"])
+                row[f"lat_{h:03d}h"] = r["LAT"]
+                row[f"lon_{h:03d}h"] = r["LON"]
         out.append(row)
-    return pd.DataFrame(out)
+    out = pd.DataFrame(out)
+    if lst is not None and not lst.empty:
+        l2 = lst[["YY", "SEQ", "TYP_NAME", "TYP_EN", "EFF"]].copy()
+        l2["YY"] = pd.to_numeric(l2["YY"]); l2["SEQ"] = pd.to_numeric(l2["SEQ"])
+        out = out.merge(l2.rename(columns={"SEQ": "TYP"}), on=["YY", "TYP"], how="left")
+        front = ["YY", "TYP", "TYP_NAME", "TYP_EN", "EFF"]
+        out = out[front + [c for c in out.columns if c not in front]]
+    return out
 
 
 # ---------------------------------------------------------------- 태풍 (공공데이터포털)
@@ -258,16 +276,17 @@ def cmd_typhoon(a):
     if a.via == "hub":
         key = require_key("KMA_APIHUB_KEY", HUB_GUIDE)
         lst, f = typhoon_hub(years, key)
-        first = first_forecast_hub(f)
+        first = first_forecast_hub(f, lst)
     else:
         key = decoded_service_key(require_key("DATA_GO_KR_KEY", DGK_GUIDE))
         lst, f = typhoon_datagokr(years, key)
         first = first_forecast_datagokr(lst, f)
-    OUT.mkdir(parents=True, exist_ok=True)
-    lst.to_csv(OUT / "kma_typhoon_list.csv", index=False)
-    f.to_csv(OUT / "kma_typhoon_fcst.csv", index=False)
-    first.to_csv(OUT / "kma_first_forecast.csv", index=False)
-    print(f"저장: {OUT}/kma_typhoon_list.csv ({len(lst)}행), kma_typhoon_fcst.csv ({len(f)}행), "
+    out = OUT / "typhoon"
+    out.mkdir(parents=True, exist_ok=True)
+    lst.to_csv(out / "kma_typhoon_list.csv", index=False)
+    f.to_csv(out / "kma_typhoon_fcst.csv", index=False)
+    first.to_csv(out / "kma_first_forecast.csv", index=False)
+    print(f"저장: {out}/kma_typhoon_list.csv ({len(lst)}행), kma_typhoon_fcst.csv ({len(f)}행), "
           f"kma_first_forecast.csv ({len(first)}행)")
 
 
