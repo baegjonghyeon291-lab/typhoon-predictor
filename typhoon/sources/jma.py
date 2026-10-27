@@ -114,18 +114,21 @@ def parse_report(path):
                     if rd.get("unit") == "km":
                         radius = float(rd.text) if rd.text else None
                         break
-        pres = wind = None
+        pres = wind = wind_kt = None
         for p in find_all(mi, "Pressure"):
             if p.get("type") == "中心気圧" and p.text:
                 pres = float(p.text)
         for w in find_all(mi, "WindSpeed"):
             if w.get("type") == "最大風速" and w.get("unit") == "m/s" and w.text:
                 wind = float(w.text)
+            if w.get("type") == "最大風速" and w.get("unit") == "ノット" and w.text:
+                wind_kt = float(w.text)
         cls = find_one(mi, "TyphoonClass")
         rows.append({**base, "valid_time": dt_el.text if dt_el is not None else None,
                      "kind": kind, "lead_h": lead, "lat": lat, "lon": lon,
                      "radius70_km": radius, "pressure_hpa": pres, "max_wind_ms": wind,
-                     "class": cls.text if cls is not None else None})
+                     "class": cls.text if cls is not None else None,
+                     "max_wind_kt": wind_kt})
     for r in rows:
         r["typhoon_number"], r["name"] = number, name
     return rows

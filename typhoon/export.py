@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .data import load, download, ROOT
+from . import realtime
 from .features import add_features, add_targets, add_env, predict, FEATURES
 from .train import SPLIT_YEAR
 
@@ -41,6 +42,40 @@ def export_models():
     (OUT / "model.json").write_text(json.dumps(out, separators=(",", ":")))
 
 
+def export_frost():
+    """서리 모델(브라우저 계산용)과 지점별 통계."""
+    from .frost import ASOS, STN_POS, build
+    if not ASOS.exists() or not (ROOT / "models" / "frost.joblib").exists():
+        return
+    m = joblib.load(ROOT / "models" / "frost.joblib")
+    d = pd.read_csv(ASOS, parse_dates=["TM"])
+    names = d.drop_duplicates("STN").set_index("STN").stn_name.to_dict()
+    d["m"] = d.TM.dt.month
+    rate = d.groupby(["STN", "m"]).frost.mean().unstack().reindex(columns=range(1, 13))
+    # 지점별 연도별 첫서리(8월 이후 첫 날)와 끝서리(다음 해 7월까지 마지막 날) 평균 달력일
+    d["season"] = np.where(d.TM.dt.month >= 8, d.TM.dt.year, d.TM.dt.year - 1)
+    fr = d[d.frost == 1]
+    first = fr.groupby(["STN", "season"]).TM.min().reset_index()
+    last = fr.groupby(["STN", "season"]).TM.max().reset_index()
+    def md(x):
+        return x.strftime("%m-%d")
+    def mean_day(ser):
+        ref = pd.to_datetime("2001-" + ser.dt.strftime("%m-%d"))
+        ref = ref.where(ref.dt.month >= 8, ref + pd.DateOffset(years=1))
+        return md(ref.mean()) if len(ref) else None
+    stations = []
+    for stn, (lat, lon) in STN_POS.items():
+        f = first[(first.STN == stn) & (first.season >= 2005)]
+        l = last[(last.STN == stn) & (last.season >= 2005)]
+        stations.append({"stn": int(stn), "name": names[stn], "lat": lat, "lon": lon,
+                         "rate": [num(v, 3) for v in rate.loc[stn].values],
+                         "first_avg": mean_day(f.TM), "last_avg": mean_day(l.TM)})
+    out = {"features": m["features"], "clf": tree_json(m["clf"]), "stations": stations,
+           "metrics": json.loads((ROOT / "reports" / "frost_metrics.json").read_text()),
+           "data_until": d.TM.max().strftime("%Y-%m-%d")}
+    (OUT / "frost.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
+
+
 def predict_rows(d, models):
     d = d.copy()
     for c in models:
@@ -53,7 +88,7 @@ def track(g, extra=()):
             for t, la, lo, w, p, (_, r) in zip(g.time, g.LAT, g.LON, g.wind, g.pres, g.iterrows())]
 
 
-def export_recent(df, models):
+def export_recent(df, models, live=False):
     last_time = df.time.max()
     sids = df[df.time >= last_time - pd.Timedelta(days=RECENT_DAYS)].SID.unique()
     storms = []
@@ -72,7 +107,7 @@ def export_recent(df, models):
         storms.append(s)
     storms.sort(key=lambda s: s["end"], reverse=True)
     return {"generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
-            "data_until": last_time.strftime("%Y-%m-%dT%H"), "storms": storms}
+            "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "storms": storms}
 
 
 def export_history(df, models):
@@ -110,10 +145,14 @@ def main():
         from . import env_atmos
         env_atmos.build(recent=True)
     OUT.mkdir(parents=True, exist_ok=True)
-    df = add_env(add_features(load()))
+    base = load()
+    full = realtime.merge(base)
+    live = len(full) > len(base)
+    df = add_env(add_features(full))
     models = ["korea", "japan"]
     export_models()
-    for name, obj in [("latest", export_recent(df, models)), ("history", export_history(df, models)),
+    export_frost()
+    for name, obj in [("latest", export_recent(df, models, live)), ("history", export_history(df, models)),
                       ("stats", export_stats(df))]:
         (OUT / f"{name}.json").write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
 

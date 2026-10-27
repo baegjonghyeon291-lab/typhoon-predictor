@@ -81,7 +81,7 @@ function countUp(el, to, digits = 0) {
 
 /* 지금 */
 function renderNow(latest) {
-  document.getElementById("asof").textContent = `자료 기준 ${kst(latest.data_until, true)}`;
+  document.getElementById("asof").textContent = `자료 기준 ${kst(latest.data_until, true)}${latest.live ? " · 실시간(일본 기상청 공개 자료 포함)" : ""}`;
   const map = baseMap("nowMap", [28, 132], 4);
   KOREA_CITIES.forEach(c => L.circle(c, { radius: 200000, color: C.korea, weight: 0, fillOpacity: .05 }).addTo(map));
   const list = document.getElementById("nowList");
@@ -165,7 +165,7 @@ function renderSim(model) {
 }
 
 /* 한국 vs 일본 */
-function renderCompare(stats) {
+function renderCompare(stats, kma) {
   const a = stats.analysis, m = stats.metrics;
   const leadP = a.model_warning_lead, leadF = a.model_warning_lead_full || {};
   const warn = c => (leadF[c] || leadP[c]).median_warning_lead_h;
@@ -185,6 +185,10 @@ function renderCompare(stats) {
     p.querySelector(".was")?.remove();
     if (leadF[c]) p.insertAdjacentHTML("beforeend", `<small class="was">경로 모델 ${leadP[c].median_warning_lead_h}시간</small>`);
   });
+  const kmaF = kma && kma.korea_lead && kma.korea_lead.since_2015_same_as_model && kma.korea_lead.since_2015_same_as_model.first_fcst_track_in_korea;
+  if (kmaF && kmaF.median_warning_lead_h != null) {
+    document.getElementById("warnK").parentElement.insertAdjacentHTML("beforeend", `<small class="was kma">기상청 예보 ${kmaF.median_warning_lead_h}시간</small>`);
+  }
   document.getElementById("agencyRatio").textContent =
     `${a.agency_tracking_start.storms}개 태풍 중 ${Math.round(a.agency_tracking_start.kma_later_ratio * 100)}%`;
 
@@ -204,6 +208,14 @@ function renderCompare(stats) {
     sets.push(line(leadP, false));
     if (leadF[c]) sets.push(line(leadF, true));
   });
+  if (kmaF) {
+    sets.push({
+      label: "기상청 예보", data: leads.map(h => kmaF[`warned_${h}h_before`] * 100),
+      borderColor: "#ffb703", backgroundColor: "#ffb703", tension: .35, borderWidth: 2.5, borderDash: [2, 5],
+      pointRadius: 4, pointStyle: "rectRot", fill: false,
+    });
+  }
+  const usePS = hasFull || !!kmaF;
   reveal(document.getElementById("leadChart").closest(".card"), () => new Chart(document.getElementById("leadChart"), {
     type: "line",
     data: { labels: leads.map(h => `${h}시간 전`), datasets: sets },
@@ -211,7 +223,7 @@ function renderCompare(stats) {
       maintainAspectRatio: false, animation: { duration: 1600 },
       scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
       plugins: {
-        legend: { labels: { usePointStyle: hasFull, boxWidth: 28, boxHeight: 8 } },
+        legend: { labels: { usePointStyle: usePS, boxWidth: 28, boxHeight: 8 } },
         tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } },
       },
     },
@@ -238,7 +250,9 @@ function renderCompare(stats) {
   const chip = (c, name, key, unit = "") => full[c] && full[c][key] != null
     ? `<span class="cmp">${ko[c]} ${name}<em>경로</em><s>${m[c][key]}${unit}</s><em>환경</em><b>${full[c][key]}${unit}</b></span>`
     : `<span>${ko[c]} ${name}<b>${m[c][key]}${unit}</b></span>`;
-  document.getElementById("metrics").innerHTML = `<span>검증 2015년~</span>` +
+  const kmaChip = kmaF && kmaF.median_warning_lead_h != null
+    ? `<span class="cmp">한국 첫 경보 중앙값<em>기상청 예보</em><s>${kmaF.median_warning_lead_h}시간</s><em>우리 모델</em><b>${warn("korea")}시간</b></span>` : "";
+  document.getElementById("metrics").innerHTML = `<span>검증 2015년~</span>` + kmaChip +
     ["korea", "japan"].map(c => chip(c, "AUC", "auc") + chip(c, "도착 시간 오차", "arrival_mae_h", "시간")).join("");
 }
 
@@ -340,13 +354,82 @@ function renderStats(stats) {
   }));
 }
 
+/* 서리 */
+function renderFrost(fr) {
+  const form = document.getElementById("frostForm");
+  const COL = ["#ff5d6c", "#4cc9f0", "#ffb703", "#9fdcff", "#b693ff", "#7ee08a"];
+  const ST = fr.stations;
+  ST.forEach(s => form.stn.add(new Option(s.name, s.stn)));
+  const y = new Date().getFullYear();
+  form.date.value = `${y}-11-15`;
+  const bar = document.querySelector(".ring[data-c=frost] .bar");
+  const outEl = document.getElementById("frostP");
+  const val = n => +form[n].value;
+  function update() {
+    form.querySelectorAll("label").forEach(l => {
+      const i = l.querySelector("input[type=range]"), o = l.querySelector("output");
+      if (i && o) o.textContent = i.value;
+    });
+    const st = ST.find(s => String(s.stn) === form.stn.value) || ST[0];
+    const d = new Date((form.date.value || `${y}-11-15`) + "T00:00:00Z");
+    const doy = Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 0)) / 864e5);
+    const o = {
+      TA_AVG: val("TA_AVG"), TA_MAX: val("TA_MAX"), TA_MIN: val("TA_MIN"), TD_AVG: val("TD_AVG"),
+      TS_AVG: val("TA_AVG"), TG_MIN: val("TA_MIN") - 3, HM_AVG: val("HM_AVG"), HM_MIN: Math.max(5, val("HM_AVG") - 20),
+      WS_AVG: val("WS_AVG"), WS_MAX: val("WS_AVG") * 2.2, PS_AVG: 1015, CA_TOT: val("CA_TOT"),
+      SS_DAY: Math.max(0, (10 - val("CA_TOT")) * 0.9), RN_DAY: 0, SD_MAX: 0,
+      d_TA_MIN: 0, d_PS_AVG: 0, d_TD_AVG: 0,
+      doy_sin: Math.sin(2 * Math.PI * doy / 365.25), doy_cos: Math.cos(2 * Math.PI * doy / 365.25),
+      stn_lat: st.lat, stn_lon: st.lon,
+    };
+    const x = fr.features.map(f => (o[f] ?? NaN));
+    const p = 1 / (1 + Math.exp(-runTrees(fr.clf, x)));
+    outEl.textContent = pct(p);
+    bar.style.strokeDashoffset = 326.7 * (1 - p);
+    bar.style.opacity = p < .01 ? 0 : 1;
+  }
+  form.addEventListener("input", update);
+  reveal(document.querySelector("#frost .sim-panel"), update);
+
+  const mmdd = t => { const [m, d] = String(t).split("-"); return `${+m}월 ${+d}일`; };
+  reveal(document.getElementById("frostChart").closest(".card"), () => new Chart(document.getElementById("frostChart"), {
+    type: "line",
+    data: {
+      labels: [...Array(12)].map((_, i) => `${i + 1}월`),
+      datasets: ST.map((s, i) => ({
+        label: s.name, data: s.rate.map(v => v * 100), borderColor: COL[i % 6], backgroundColor: COL[i % 6],
+        tension: .35, borderWidth: 2.2, pointRadius: 2.5,
+      })),
+    },
+    options: {
+      maintainAspectRatio: false, animation: { duration: 1600 }, interaction: { mode: "index", intersect: false },
+      scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
+      plugins: {
+        legend: { labels: { usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } },
+      },
+    },
+  }));
+  document.getElementById("frostStations").innerHTML = ST.map((s, i) =>
+    `<div class="fs"><b><i style="background:${COL[i % 6]}"></i>${s.name}</b><p>첫서리<span>${mmdd(s.first_avg)}</span></p><p>끝서리<span>${mmdd(s.last_avg)}</span></p></div>`).join("");
+  const m = fr.metrics || {};
+  document.getElementById("frostMetrics").innerHTML = `<span>평균 첫서리·끝서리 2005년~</span>` +
+    (m.auc != null ? `<span>AUC<b>${m.auc}</b></span>` : "") +
+    (m.f1 != null && m.persistence_f1 != null ? `<span class="cmp">F1<em>단순 지속</em><s>${m.persistence_f1}</s><em>모델</em><b>${m.f1}</b></span>` : "");
+}
+
 document.querySelectorAll(".reveal").forEach(el => reveal(el));
 
-Promise.all(["data/latest.json", "data/stats.json", "data/history.json", "data/model.json"].map(getJSON))
-  .then(([latest, stats, history, model]) => {
+const soft = p => getJSON(p).catch(() => null);
+soft("data/frost.json").then(fr => {
+  if (fr && fr.stations && fr.stations.length && fr.clf) renderFrost(fr);
+  else document.getElementById("frost").hidden = true;
+});
+Promise.all(["data/latest.json", "data/stats.json", "data/history.json", "data/model.json"].map(getJSON).concat(soft("data/kma_lead.json")))
+  .then(([latest, stats, history, model, kma]) => {
     renderNow(latest);
     renderSim(model);
-    renderCompare(stats);
+    renderCompare(stats, kma);
     renderHistory(history);
     renderStats(stats);
   });

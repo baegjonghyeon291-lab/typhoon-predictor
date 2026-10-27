@@ -19,6 +19,7 @@
     <a href="#sim">직접 예측</a>
     <a href="#compare">한국 vs 일본</a>
     <a href="#history">지난 태풍</a>
+    <a href="#frost">서리</a>
   </nav>
 </header>
 
@@ -94,7 +95,33 @@
     <div class="card reveal"><h3>연도별</h3><canvas id="yearChart"></canvas></div>
   </div>
 </section>
+<section id="frost">
+  <h2 class="reveal">내일 서리</h2>
+  <div class="frost-grid">
+    <div class="sim-panel reveal">
+      <h3>서리 가능일(초상온도 0℃ 이하)</h3>
+      <div class="sim-result one">
+        <div class="ring" data-c="frost"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="track"/><circle cx="60" cy="60" r="52" class="bar"/></svg><div><b id="frostP">0%</b><span>내일</span></div></div>
+      </div>
+      <form id="frostForm" class="sliders">
+        <label>지점<select name="stn"></select></label>
+        <label>날짜<input type="date" name="date"></label>
+        <label>최저기온 <span><output></output>℃</span><input type="range" name="TA_MIN" min="-15" max="25" step="0.5" value="1"></label>
+        <label>평균기온 <span><output></output>℃</span><input type="range" name="TA_AVG" min="-10" max="30" step="0.5" value="6"></label>
+        <label>최고기온 <span><output></output>℃</span><input type="range" name="TA_MAX" min="-5" max="38" step="0.5" value="12"></label>
+        <label>이슬점 <span><output></output>℃</span><input type="range" name="TD_AVG" min="-25" max="25" step="0.5" value="-3"></label>
+        <label>습도 <span><output></output>%</span><input type="range" name="HM_AVG" min="10" max="100" step="1" value="50"></label>
+        <label>풍속 <span><output></output>m/s</span><input type="range" name="WS_AVG" min="0" max="12" step="0.1" value="1.5"></label>
+        <label>전운량 <span><output></output>/10</span><input type="range" name="CA_TOT" min="0" max="10" step="0.5" value="1"></label>
+      </form>
+    </div>
+    <div class="card reveal"><h3>월별 서리 가능일 비율</h3><canvas id="frostChart"></canvas></div>
+  </div>
+  <div class="frost-stations reveal" id="frostStations"></div>
+  <div class="metrics reveal" id="frostMetrics"></div>
+</section>
 </main>
+<footer class="foot">자료 출처: IBTrACS · 気象庁(일본 기상청) · 기상청</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>

@@ -17,7 +17,9 @@ ASOS = ROOT / "data" / "kma" / "asos" / "asos_daily.csv"
 SPLIT_YEAR = 2015
 OBS = ["TA_AVG", "TA_MAX", "TA_MIN", "TD_AVG", "TS_AVG", "TG_MIN", "HM_AVG", "HM_MIN", "WS_AVG", "WS_MAX",
        "PS_AVG", "CA_TOT", "SS_DAY", "RN_DAY", "SD_MAX"]
-FEATURES = OBS + ["d_TA_MIN", "d_PS_AVG", "d_TD_AVG", "doy_sin", "doy_cos", "STN"]
+STN_POS = {108: (37.57, 126.97), 159: (35.10, 129.03), 156: (35.17, 126.89), 184: (33.51, 126.53),
+           105: (37.75, 128.89), 133: (36.37, 127.37)}
+FEATURES = OBS + ["d_TA_MIN", "d_PS_AVG", "d_TD_AVG", "doy_sin", "doy_cos", "stn_lat", "stn_lon"]
 
 
 def build():
@@ -25,6 +27,8 @@ def build():
     g = d.groupby("STN")
     for c in ["TA_MIN", "PS_AVG", "TD_AVG"]:
         d[f"d_{c}"] = d[c] - g[c].shift(1)
+    d["stn_lat"] = d.STN.map(lambda s: STN_POS[s][0])
+    d["stn_lon"] = d.STN.map(lambda s: STN_POS[s][1])
     doy = d.TM.dt.dayofyear
     d["doy_sin"], d["doy_cos"] = np.sin(2 * np.pi * doy / 365.25), np.cos(2 * np.pi * doy / 365.25)
     nxt = g.TM.shift(-1)
@@ -39,8 +43,7 @@ def main():
     # 서리가 생길 수 있는 철(10월~4월)만 평가에 의미가 있어 그 기간으로 학습·검증
     d = d[d.TM.dt.month.isin([10, 11, 12, 1, 2, 3, 4])]
     tr, te = d[d.TM.dt.year < SPLIT_YEAR], d[d.TM.dt.year >= SPLIT_YEAR]
-    clf = HistGradientBoostingClassifier(max_iter=400, learning_rate=0.05, random_state=0,
-                                         categorical_features=[FEATURES.index("STN")])
+    clf = HistGradientBoostingClassifier(max_iter=400, learning_rate=0.05, random_state=0)
     clf.fit(tr[FEATURES], tr.target)
     p = clf.predict_proba(te[FEATURES])[:, 1]
     # 비교 기준: 오늘 서리였으면 내일도 서리
