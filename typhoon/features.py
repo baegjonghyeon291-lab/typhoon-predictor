@@ -13,7 +13,7 @@ FEATURES = ["LAT", "LON", "wind", "pres", "dwind_24", "dlat_6", "dlon_6", "dlat_
             "dist_seoul", "bearing_seoul", "dist_tokyo", "bearing_tokyo"]
 
 
-ENV_FILES = ["atmos_features.parquet", "ocean_features.parquet"]
+ENV_FILES = ["atmos_features.parquet"]
 ENV_PREFIXES = ("atm_", "ocn_")
 # 환경 모델에 쓰는 특성. 해수온·기후 지수와 500hPa 고도 절대값은 기후 추세로 기준이 바뀌어
 # 2015년 이후 검증 성능을 떨어뜨려서 빼고, 지향류와 고기압의 상대 위치만 쓴다(reports/env_experiment.txt).
@@ -33,13 +33,17 @@ def add_features(df):
     g = df.groupby("SID")
     df["wind"] = df.TOKYO_WIND
     df["pres"] = df.TOKYO_PRES
+    # 관측이 빠져 간격이 어긋난 점은 변화량을 NaN으로 둔다(5시간이 6시간처럼 계산되는 것 방지)
     for h, k in [(6, 1), (24, 4)]:
-        df[f"dlat_{h}"] = df.LAT - g.LAT.shift(k)
-        df[f"dlon_{h}"] = df.LON - g.LON.shift(k)
-    df["dwind_24"] = df.wind - g.wind.shift(4)
+        ok = (df.time - g.time.shift(k)) == pd.Timedelta(hours=h)
+        df[f"dlat_{h}"] = (df.LAT - g.LAT.shift(k)).where(ok)
+        df[f"dlon_{h}"] = (df.LON - g.LON.shift(k)).where(ok)
+        if h == 24:
+            df["dwind_24"] = (df.wind - g.wind.shift(k)).where(ok)
+    ok6 = (df.time - g.time.shift(1)) == pd.Timedelta(hours=6)
     prev_lat, prev_lon = g.LAT.shift(1), g.LON.shift(1)
-    df["speed_kmh"] = haversine(prev_lat, prev_lon, df.LAT, df.LON) / 6
-    df["heading"] = bearing(prev_lat, prev_lon, df.LAT, df.LON)
+    df["speed_kmh"] = (haversine(prev_lat, prev_lon, df.LAT, df.LON) / 6).where(ok6)
+    df["heading"] = bearing(prev_lat, prev_lon, df.LAT, df.LON).where(ok6)
     df["age_h"] = (df.time - g.time.transform("min")).dt.total_seconds() / 3600
     df["month"] = df.time.dt.month
     df["doy"] = df.time.dt.dayofyear
@@ -86,13 +90,24 @@ def model_features(m):
     return m.get("features", FEATURES)
 
 
+_MODEL_CACHE = {}
+
+
+def _read_model(path):
+    import joblib
+    key = (str(path), path.stat().st_mtime_ns)       # 재학습으로 파일이 바뀌면 다시 읽음
+    if key not in _MODEL_CACHE:
+        _MODEL_CACHE.clear()
+        _MODEL_CACHE[key] = joblib.load(path)
+    return _MODEL_CACHE[key]
+
+
 def load_model(country, full=True):
     """환경 특성 모델(_full)이 있으면 그것, 없으면 경로만 쓰는 모델."""
-    import joblib
     p = ROOT / "models" / f"{country}_full.joblib"
     if full and p.exists():
-        return joblib.load(p)
-    return joblib.load(ROOT / "models" / f"{country}.joblib")
+        return _read_model(p)
+    return _read_model(ROOT / "models" / f"{country}.joblib")
 
 
 def predict(country, d):
@@ -103,7 +118,7 @@ def predict(country, d):
     full = load_model(country)
     feats = model_features(full)
     env = [c for c in ENV_FEATURES if c in feats]
-    if env:
+    if env and all(c in d.columns for c in feats):      # 환경 parquet 이 없으면 경로 모델만
         has = d[env].notna().any(axis=1).to_numpy()
         if has.any():
             p[has] = full["clf"].predict_proba(d.loc[has, feats])[:, 1]

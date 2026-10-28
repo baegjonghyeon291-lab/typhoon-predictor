@@ -215,7 +215,13 @@ def compute(df, years):
         if not all(_path(v, y).exists() for v in VARS):
             print(f"  {y}: 캐시 없음, NaN")
             continue
-        parts.append(features_year(y, pts))
+        part = features_year(y, pts)
+        # 1월 1일 점은 "전날" 자료가 전년도 파일에 있다
+        jan1 = pts[(pts["time"].dt.month == 1) & (pts["time"].dt.day == 1)]
+        if len(jan1) and all(_path(v, y - 1).exists() for v in VARS):
+            prev = features_year(y - 1, jan1)
+            part.loc[jan1.index, prev.columns] = prev.loc[jan1.index, prev.columns].to_numpy()
+        parts.append(part)
     feat = pd.concat(parts) if parts else pd.DataFrame(index=df.index[:0])
     return feat
 

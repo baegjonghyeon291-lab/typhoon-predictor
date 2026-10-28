@@ -70,6 +70,25 @@ def _analysis_rows():
     return d
 
 
+def _match_by_track(ib, g, max_km=250.0, gap_h=12):
+    """이름이 달라도 같은 태풍인지 위치·시각으로 판정: JMA 점과 같은 시각(없으면 직전 gap_h 안)의
+    IBTrACS 점이 max_km 안에 있으면 그 태풍의 SID."""
+    tmin = g["time"].min()
+    near = ib[(ib["time"] >= tmin - pd.Timedelta(hours=gap_h)) & (ib["time"] <= g["time"].max())]
+    if near.empty:
+        return None
+    best, best_km = None, max_km
+    for sid, p in near.groupby("SID"):
+        for _, r in g.iterrows():
+            q = p[(p["time"] - r["time"]).abs() <= pd.Timedelta(hours=gap_h)]
+            if q.empty:
+                continue
+            km = float(haversine(q["LAT"].values, q["LON"].values, r["lat"], r["lon"]).min())
+            if km < best_km:
+                best, best_km = sid, km
+    return best
+
+
 def fetch_recent(ibtracs_df, download=True):
     """load() 결과(ibtracs_df)와 같은 컬럼의 JMA 실시간 보충 행(IBTrACS 마지막 시각 이후분만)."""
     try:
@@ -89,6 +108,10 @@ def fetch_recent(ibtracs_df, download=True):
             year = 2000 + int(str(num)[:2])
             cand = last[(last["NAME"].str.upper() == name) &
                         (last["t1"] >= tmin - pd.Timedelta(days=10)) & (last["t0"] <= tmax)]
+            if not len(cand):
+                sid_t = _match_by_track(ib, g)       # IBTrACS 에 아직 NOT_NAMED 등으로 남은 경우 위치·시각으로
+                if sid_t is not None:
+                    cand = last.loc[[sid_t]]
             if len(cand):
                 sid = cand.sort_values("t1").index[-1]
                 season = int(last.loc[sid, "SEASON"])

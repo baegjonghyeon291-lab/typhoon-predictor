@@ -13,7 +13,7 @@
 | 자료 | 출처 | 쓰는 값 |
 |---|---|---|
 | NCEP/NCAR Reanalysis 1 일평균 | NOAA PSL (OPeNDAP로 0–60N, 100–180E만) | 850·500·200hPa 바람(지향류, 연직 시어), 500hPa 고도(북태평양 고기압 위치·세기) |
-| ERSST v5 월평균 해수면온도 | NOAA PSL | 태풍 위치·북쪽 5° 해수온, 1991–2020 대비 편차 |
+| ERSST v5 월평균 해수면온도 | NOAA PSL | (모델에는 안 씀) 태풍 위치·북쪽 5° 해수온, 1991–2020 대비 편차 |
 | ONI, PDO, Niño4 | NOAA CPC, NCEI, PSL | 엘니뇨·태평양 10년 진동 상태 |
 
 실시간 예측과 같은 조건이 되도록 월 단위 자료는 그 시점에 이미 발표된 값만 쓴다(해수온 편차·PDO·Niño4는 지난달, ONI는 두 달 전 중심값).
@@ -67,7 +67,7 @@
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m typhoon.env_ocean  # 해수온·기후 지수 → data/env/ocean_features.parquet
+.venv/bin/python -m typhoon.env_ocean  # 해수온·기후 지수(실험용, 모델에는 안 씀) → data/env/ocean_features.parquet
 .venv/bin/python -m typhoon.env_atmos  # 재분석 대기 특성 → data/env/atmos_features.parquet
 .venv/bin/python -m typhoon.train      # 학습 → models/, reports/metrics.json
 .venv/bin/python -m typhoon.analyze    # 분석 → reports/analysis.json

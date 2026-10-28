@@ -592,7 +592,7 @@ function renderFrost(fr) {
     const doy = Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 0)) / 864e5);
     const o = {
       TA_AVG: val("TA_AVG"), TA_MAX: val("TA_MAX"), TA_MIN: val("TA_MIN"), TD_AVG: val("TD_AVG"),
-      TS_AVG: val("TA_AVG"), TG_MIN: val("TA_MIN") - 3, HM_AVG: val("HM_AVG"), HM_MIN: Math.max(5, val("HM_AVG") - 20),
+      TS_AVG: val("TA_AVG"), TG_MIN: val("TG_MIN"), HM_AVG: val("HM_AVG"), HM_MIN: Math.max(5, val("HM_AVG") - 20),
       WS_AVG: val("WS_AVG"), WS_MAX: val("WS_AVG") * 2.2, PS_AVG: 1015, CA_TOT: val("CA_TOT"),
       SS_DAY: Math.max(0, (10 - val("CA_TOT")) * 0.9), RN_DAY: 0, SD_MAX: 0,
       d_TA_MIN: 0, d_PS_AVG: 0, d_TD_AVG: 0,

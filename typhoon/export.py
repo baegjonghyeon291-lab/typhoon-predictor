@@ -100,10 +100,12 @@ def latest_forecasts():
     if not rows:
         return {}
     d = pd.DataFrame(rows)
-    d = d[(d.info_type != "取消") & (d.lead_h > 0)]
+    d = d[d.lead_h > 0]
     out = {}
     for name, g in d.groupby("name"):
         g = g[g.report_time == g.report_time.max()].sort_values("lead_h")
+        if (g.info_type == "取消").any():          # 가장 최근 발표가 취소면 그 전 예보는 폐기
+            continue
         issued = pd.to_datetime(g.report_time.iloc[0], utc=True).strftime("%Y-%m-%dT%H")
         out[str(name).upper()] = {"issued": issued, "points": [
             [int(r.lead_h), num(r.lat, 1), num(r.lon, 1), num(r.radius70_km, 0), num(r.pressure_hpa, 0),
@@ -165,13 +167,36 @@ def export_stats(df):
             "korea_by_year": {str(y): int(by_year.get(y, 0)) for y in years}}
 
 
+def refresh_sources(atmos_timeout=900):
+    """최신 원자료 갱신. 어느 한 곳이 느리거나 죽어도 갱신 전체가 멈추지 않고 기존 자료로 이어간다."""
+    import socket
+    import subprocess
+    import sys
+    import warnings
+    socket.setdefaulttimeout(120)
+    try:
+        download()
+    except Exception as e:  # noqa: BLE001
+        warnings.warn(f"IBTrACS 갱신 실패, 기존 자료 사용: {type(e).__name__}", RuntimeWarning)
+    import os
+    import signal
+    # 하위 프로세스(병렬 받기 작업자 포함)를 한 그룹으로 묶어, 제한시간이 지나면 모두 끝낸다
+    proc = subprocess.Popen([sys.executable, "-m", "typhoon.env_atmos", "--recent"], cwd=ROOT,
+                            start_new_session=True)
+    try:
+        if proc.wait(timeout=atmos_timeout) != 0:
+            warnings.warn("NOAA 재분석 갱신 실패, 기존 특성 사용: 비정상 종료", RuntimeWarning)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+        warnings.warn("NOAA 재분석 갱신 시간 초과, 기존 특성 사용", RuntimeWarning)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--update", action="store_true")
     if ap.parse_args().update:
-        download()
-        from . import env_atmos
-        env_atmos.build(recent=True)
+        refresh_sources()
     OUT.mkdir(parents=True, exist_ok=True)
     base = load()
     full = realtime.merge(base)
