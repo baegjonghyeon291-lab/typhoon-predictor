@@ -1,4 +1,6 @@
 """한 시점의 태풍 상태로 학습 특성과 정답(도착 여부·남은 시간) 만들기."""
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -65,10 +67,11 @@ def add_targets(df, country):
     return df
 
 
-def add_env(df):
-    """data/env/ 의 대기·해양 특성(env_atmos, env_ocean 출력)을 시점별로 붙인다. 없으면 그대로."""
-    for f in ENV_FILES:
-        p = ROOT / "data" / "env" / f
+def add_env(df, files=None):
+    """data/env/ 의 대기 특성(env_atmos 출력)을 시점별로 붙인다. 없으면 그대로.
+    files: 다른 특성 파일(예: ERA5)로 바꿔 붙일 때 파일명 또는 경로 목록."""
+    for f in (files or ENV_FILES):
+        p = Path(f) if Path(f).is_absolute() else ROOT / "data" / "env" / f
         if p.exists():
             env = pd.read_parquet(p)
             df = df.merge(env.drop_duplicates(["SID", "time"]), on=["SID", "time"], how="left")

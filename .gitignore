@@ -11,3 +11,6 @@ data/env/era5/
 data/env/ocean/
 data/kma/
 data/jma/
+previews/
+previews2/
+data/env/era5_features.parquet
