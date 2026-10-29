@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 
 from .data import load, download, ROOT
-from .features import add_features, add_targets, FEATURES
+from . import realtime
+from .features import add_features, add_targets, add_env, predict, FEATURES
 from .train import SPLIT_YEAR
 
 OUT = ROOT / "docs" / "data"
@@ -41,11 +42,44 @@ def export_models():
     (OUT / "model.json").write_text(json.dumps(out, separators=(",", ":")))
 
 
+def export_frost():
+    """서리 모델(브라우저 계산용)과 지점별 통계."""
+    from .frost import ASOS, STN_POS, build
+    if not ASOS.exists() or not (ROOT / "models" / "frost.joblib").exists():
+        return
+    m = joblib.load(ROOT / "models" / "frost.joblib")
+    d = pd.read_csv(ASOS, parse_dates=["TM"])
+    names = d.drop_duplicates("STN").set_index("STN").stn_name.to_dict()
+    d["m"] = d.TM.dt.month
+    rate = d.groupby(["STN", "m"]).frost.mean().unstack().reindex(columns=range(1, 13))
+    # 지점별 연도별 첫서리(8월 이후 첫 날)와 끝서리(다음 해 7월까지 마지막 날) 평균 달력일
+    d["season"] = np.where(d.TM.dt.month >= 8, d.TM.dt.year, d.TM.dt.year - 1)
+    fr = d[d.frost == 1]
+    first = fr.groupby(["STN", "season"]).TM.min().reset_index()
+    last = fr.groupby(["STN", "season"]).TM.max().reset_index()
+    def md(x):
+        return x.strftime("%m-%d")
+    def mean_day(ser):
+        ref = pd.to_datetime("2001-" + ser.dt.strftime("%m-%d"))
+        ref = ref.where(ref.dt.month >= 8, ref + pd.DateOffset(years=1))
+        return md(ref.mean()) if len(ref) else None
+    stations = []
+    for stn, (lat, lon) in STN_POS.items():
+        f = first[(first.STN == stn) & (first.season >= 2005)]
+        l = last[(last.STN == stn) & (last.season >= 2005)]
+        stations.append({"stn": int(stn), "name": names[stn], "lat": lat, "lon": lon,
+                         "rate": [num(v, 3) for v in rate.loc[stn].values],
+                         "first_avg": mean_day(f.TM), "last_avg": mean_day(l.TM)})
+    out = {"features": m["features"], "clf": tree_json(m["clf"]), "stations": stations,
+           "metrics": json.loads((ROOT / "reports" / "frost_metrics.json").read_text()),
+           "data_until": d.TM.max().strftime("%Y-%m-%d")}
+    (OUT / "frost.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
+
+
 def predict_rows(d, models):
     d = d.copy()
-    for c, m in models.items():
-        d[f"p_{c}"] = m["clf"].predict_proba(d[FEATURES])[:, 1]
-        d[f"h_{c}"] = m["reg"].predict(d[FEATURES])
+    for c in models:
+        d[f"p_{c}"], d[f"h_{c}"] = predict(c, d)
     return d
 
 
@@ -54,14 +88,39 @@ def track(g, extra=()):
             for t, la, lo, w, p, (_, r) in zip(g.time, g.LAT, g.LON, g.wind, g.pres, g.iterrows())]
 
 
-def export_recent(df, models):
+def latest_forecasts():
+    """일본 기상청 5일 예보(가장 최근 발표)를 태풍 이름별로. 예보 중심 위치와 70% 확률 반경(km)."""
+    from .sources import jma
+    rows = []
+    for p in sorted(jma.XML_DIR.glob("*.xml")):
+        try:
+            rows += jma.parse_report(p)
+        except Exception:
+            continue
+    if not rows:
+        return {}
+    d = pd.DataFrame(rows)
+    d = d[d.lead_h > 0]
+    out = {}
+    for name, g in d.groupby("name"):
+        g = g[g.report_time == g.report_time.max()].sort_values("lead_h")
+        if (g.info_type == "取消").any():          # 가장 최근 발표가 취소면 그 전 예보는 폐기
+            continue
+        issued = pd.to_datetime(g.report_time.iloc[0], utc=True).strftime("%Y-%m-%dT%H")
+        out[str(name).upper()] = {"issued": issued, "points": [
+            [int(r.lead_h), num(r.lat, 1), num(r.lon, 1), num(r.radius70_km, 0), num(r.pressure_hpa, 0),
+             num(r.max_wind_ms, 0)] for r in g.itertuples()]}
+    return out
+
+
+def export_recent(df, models, live=False):
     last_time = df.time.max()
     sids = df[df.time >= last_time - pd.Timedelta(days=RECENT_DAYS)].SID.unique()
     storms = []
     for sid in sids:
         g = predict_rows(df[df.SID == sid], models)
         last = g.iloc[-1]
-        s = {"sid": sid, "name": str(g.NAME.iloc[0]), "start": g.time.min().strftime("%Y-%m-%dT%H"),
+        s = {"sid": sid, "name": str(g.NAME.iloc[0]), "grade": num(last.TOKYO_GRADE, 0), "start": g.time.min().strftime("%Y-%m-%dT%H"),
              "end": last.time.strftime("%Y-%m-%dT%H"), "track": track(g, ["p_korea", "p_japan"])}
         for c in models:
             hit = g[g[f"in_{c}"]]
@@ -72,8 +131,13 @@ def export_recent(df, models):
                         "eta": (last.time + pd.Timedelta(hours=float(last[f"h_{c}"]))).strftime("%Y-%m-%dT%H")}
         storms.append(s)
     storms.sort(key=lambda s: s["end"], reverse=True)
+    if live:
+        fc = latest_forecasts()
+        for s in storms:
+            if s["end"] == last_time.strftime("%Y-%m-%dT%H") and s["name"].upper() in fc:
+                s["forecast"] = fc[s["name"].upper()]
     return {"generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
-            "data_until": last_time.strftime("%Y-%m-%dT%H"), "storms": storms}
+            "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "storms": storms}
 
 
 def export_history(df, models):
@@ -103,16 +167,45 @@ def export_stats(df):
             "korea_by_year": {str(y): int(by_year.get(y, 0)) for y in years}}
 
 
+def refresh_sources(atmos_timeout=900):
+    """최신 원자료 갱신. 어느 한 곳이 느리거나 죽어도 갱신 전체가 멈추지 않고 기존 자료로 이어간다."""
+    import socket
+    import subprocess
+    import sys
+    import warnings
+    socket.setdefaulttimeout(120)
+    try:
+        download()
+    except Exception as e:  # noqa: BLE001
+        warnings.warn(f"IBTrACS 갱신 실패, 기존 자료 사용: {type(e).__name__}", RuntimeWarning)
+    import os
+    import signal
+    # 하위 프로세스(병렬 받기 작업자 포함)를 한 그룹으로 묶어, 제한시간이 지나면 모두 끝낸다
+    proc = subprocess.Popen([sys.executable, "-m", "typhoon.env_atmos", "--recent"], cwd=ROOT,
+                            start_new_session=True)
+    try:
+        if proc.wait(timeout=atmos_timeout) != 0:
+            warnings.warn("NOAA 재분석 갱신 실패, 기존 특성 사용: 비정상 종료", RuntimeWarning)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+        warnings.warn("NOAA 재분석 갱신 시간 초과, 기존 특성 사용", RuntimeWarning)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--update", action="store_true")
     if ap.parse_args().update:
-        download()
+        refresh_sources()
     OUT.mkdir(parents=True, exist_ok=True)
-    df = add_features(load())
-    models = {c: joblib.load(ROOT / "models" / f"{c}.joblib") for c in ["korea", "japan"]}
+    base = load()
+    full = realtime.merge(base)
+    live = len(full) > len(base)
+    df = add_env(add_features(full))
+    models = ["korea", "japan"]
     export_models()
-    for name, obj in [("latest", export_recent(df, models)), ("history", export_history(df, models)),
+    export_frost()
+    for name, obj in [("latest", export_recent(df, models, live)), ("history", export_history(df, models)),
                       ("stats", export_stats(df))]:
         (OUT / f"{name}.json").write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
 

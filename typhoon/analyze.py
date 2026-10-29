@@ -1,12 +1,11 @@
 """한국이 일본보다 태풍 예측이 늦는 이유를 데이터로 분석."""
 import json
-import joblib
 import numpy as np
 import pandas as pd
 from sklearn.inspection import permutation_importance
 
 from .data import load, ROOT
-from .features import add_features, add_targets, FEATURES
+from .features import add_features, add_targets, add_env, load_model, model_features, predict
 from .train import SPLIT_YEAR
 
 THRESHOLD = 0.5
@@ -22,12 +21,15 @@ def natural_lead(df, country):
             "p75_h": float(h.quantile(.75))}
 
 
-def warning_lead(df, country):
+def warning_lead(df, country, full=False):
     """검증 기간 태풍에 대해 모델이 처음 경보(확률 0.5 이상)를 낸 시점이 도착 몇 시간 전인지."""
-    m = joblib.load(ROOT / "models" / f"{country}.joblib")
     d = add_targets(df[df.SEASON >= SPLIT_YEAR], country)
     d = d[d.arrival.notna()].copy()
-    d["p"] = m["clf"].predict_proba(d[FEATURES])[:, 1]
+    if full:
+        d["p"] = predict(country, d)[0]
+    else:
+        m = load_model(country, full=False)
+        d["p"] = m["clf"].predict_proba(d[model_features(m)])[:, 1]
     rows = []
     for sid, g in d.groupby("SID"):
         warned = g[g.p >= THRESHOLD]
@@ -62,18 +64,20 @@ def track_turn(df):
 
 
 def importance(df, country, n=8):
-    m = joblib.load(ROOT / "models" / f"{country}.joblib")
+    m = load_model(country)
+    feats = model_features(m)
     d = add_targets(df[df.SEASON >= SPLIT_YEAR], country)
-    r = permutation_importance(m["clf"], d[FEATURES], d.hit, scoring="roc_auc", n_repeats=3, random_state=0)
-    s = pd.Series(r.importances_mean, index=FEATURES).sort_values(ascending=False).head(n)
+    r = permutation_importance(m["clf"], d[feats], d.hit, scoring="roc_auc", n_repeats=3, random_state=0)
+    s = pd.Series(r.importances_mean, index=feats).sort_values(ascending=False).head(n)
     return {k: round(float(v), 4) for k, v in s.items()}
 
 
 def main():
-    df = add_features(load())
+    df = add_env(add_features(load()))
     out = {
         "natural_lead": {c: natural_lead(df, c) for c in ["korea", "japan"]},
         "model_warning_lead": {c: warning_lead(df, c) for c in ["korea", "japan"]},
+        "model_warning_lead_full": {c: warning_lead(df, c, full=True) for c in ["korea", "japan"]},
         "agency_tracking_start": agency_start(df),
         "track_turn_last_48h": track_turn(df),
         "feature_importance": {c: importance(df, c) for c in ["korea", "japan"]},

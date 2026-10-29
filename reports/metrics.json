@@ -5,7 +5,8 @@
     "arrival_mae_h": 14.6,
     "train_rows": 77616,
     "test_rows": 11731,
-    "test_storms_hit": 28
+    "test_storms_hit": 28,
+    "n_features": 18
   },
   "japan": {
     "auc": 0.9011,
@@ -13,6 +14,29 @@
     "arrival_mae_h": 15.9,
     "train_rows": 72437,
     "test_rows": 10754,
-    "test_storms_hit": 90
+    "test_storms_hit": 90,
+    "n_features": 18
+  },
+  "full": {
+    "korea": {
+      "auc": 0.9113,
+      "brier": 0.036,
+      "arrival_mae_h": 14.8,
+      "train_rows": 77616,
+      "test_rows": 11731,
+      "test_storms_hit": 28,
+      "n_features": 28,
+      "env_rows_ratio": 0.926
+    },
+    "japan": {
+      "auc": 0.9069,
+      "brier": 0.0805,
+      "arrival_mae_h": 16.0,
+      "train_rows": 72437,
+      "test_rows": 10754,
+      "test_storms_hit": 90,
+      "n_features": 28,
+      "env_rows_ratio": 0.928
+    }
   }
 }

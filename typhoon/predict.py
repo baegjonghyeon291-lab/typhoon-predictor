@@ -6,11 +6,10 @@
   python -m typhoon.predict --update       # 최신 데이터 다시 받은 뒤 예측
 """
 import argparse
-import joblib
 import pandas as pd
 
 from .data import load, download, ROOT
-from .features import add_features, FEATURES, HORIZON_H
+from .features import add_features, add_env, predict as predict_rows, HORIZON_H
 
 
 def fmt(v, unit):
@@ -18,7 +17,7 @@ def fmt(v, unit):
 
 
 def predict(sid=None):
-    df = add_features(load(start_year=2000))
+    df = add_env(add_features(load(start_year=2000)))
     if sid is None:
         sid = df.loc[df.time.idxmax(), "SID"]
     g = df[df.SID == sid]
@@ -31,9 +30,7 @@ def predict(sid=None):
         if g[f"in_{c}"].any():
             print(f"  {label}: 이미 영향권 통과 ({g[g[f'in_{c}']].time.min():%Y-%m-%d %H시})")
             continue
-        m = joblib.load(ROOT / "models" / f"{c}.joblib")
-        p = m["clf"].predict_proba(last[FEATURES])[0, 1]
-        h = float(m["reg"].predict(last[FEATURES])[0])
+        p, h = (float(v[0]) for v in predict_rows(c, last))
         eta = last.time.iloc[0] + pd.Timedelta(hours=h)
         print(f"  {label}: {HORIZON_H}시간 내 영향 확률 {p:.0%}" +
               (f", 오면 약 {h:.0f}시간 뒤 ({eta:%m-%d %H시} UTC)" if p >= 0.2 else ""))
