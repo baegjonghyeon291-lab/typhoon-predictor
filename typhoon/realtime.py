@@ -161,4 +161,9 @@ def merge(ibtracs_df, **kw):
     if r.empty:
         return ibtracs_df
     m = pd.concat([ibtracs_df, r], ignore_index=True)
+    # IBTrACS 에 아직 NOT_NAMED 로 남은 태풍도 위치로 맞췄다면 이름을 JMA 쪽으로 통일(예보 원뿔은 이름으로 붙는다)
+    for sid, g in r.groupby("SID"):
+        jma_name = str(g["NAME"].iloc[-1]).upper()
+        if jma_name and jma_name != "UNNAMED":
+            m.loc[m["SID"] == sid, "NAME"] = jma_name
     return m.drop_duplicates(["SID", "time"], keep="first").sort_values(["SID", "time"]).reset_index(drop=True)

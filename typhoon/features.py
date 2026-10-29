@@ -90,16 +90,16 @@ def model_features(m):
     return m.get("features", FEATURES)
 
 
-_MODEL_CACHE = {}
+_MODEL_CACHE = {}          # 경로 -> (파일 수정 시각, 모델). 경로 모델과 환경 모델이 서로 지우지 않는다
 
 
 def _read_model(path):
     import joblib
-    key = (str(path), path.stat().st_mtime_ns)       # 재학습으로 파일이 바뀌면 다시 읽음
-    if key not in _MODEL_CACHE:
-        _MODEL_CACHE.clear()
-        _MODEL_CACHE[key] = joblib.load(path)
-    return _MODEL_CACHE[key]
+    mtime = path.stat().st_mtime_ns            # 재학습으로 파일이 바뀌면 그 파일만 다시 읽음
+    hit = _MODEL_CACHE.get(str(path))
+    if hit is None or hit[0] != mtime:
+        hit = _MODEL_CACHE[str(path)] = (mtime, joblib.load(path))
+    return hit[1]
 
 
 def load_model(country, full=True):
