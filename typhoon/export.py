@@ -235,9 +235,13 @@ def main():
     models = ["korea", "japan"]
     export_models()
     export_frost()
-    for name, obj in [("latest", export_recent(df, models, live)), ("history", export_history(df, models)),
-                      ("stats", export_stats(df))]:
+    latest = export_recent(df, models, live)
+    for name, obj in [("latest", latest), ("history", export_history(df, models)), ("stats", export_stats(df))]:
         (OUT / f"{name}.json").write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
+    if live:
+        # 예보 전문은 7일치만 남으므로 접근 판정을 쌓아 두고 나중에 검증(forecast_log)
+        from .forecast_log import append
+        print(f"[forecast_log] 새 기록 {append(latest)}줄")
 
 
 if __name__ == "__main__":
