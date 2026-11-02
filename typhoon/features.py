@@ -117,10 +117,18 @@ def load_model(country, full=True):
     return _read_model(ROOT / "models" / f"{country}.joblib")
 
 
+def prob(m, X):
+    """도달 확률. 모델에 Platt 보정(calib = [a, b])이 있으면 sigmoid(a·트리 점수 + b)."""
+    if "calib" not in m:
+        return m["clf"].predict_proba(X)[:, 1]
+    a, b = m["calib"]
+    return 1 / (1 + np.exp(-(a * m["clf"].decision_function(X) + b)))
+
+
 def predict(country, d):
     """도달 확률과 남은 시간. 환경 자료가 있는 시점은 환경 모델, 없으면(최근 재분석 미갱신 등) 경로 모델."""
     track = load_model(country, full=False)
-    p = track["clf"].predict_proba(d[FEATURES])[:, 1]
+    p = prob(track, d[FEATURES])
     h = track["reg"].predict(d[FEATURES])
     full = load_model(country)
     feats = model_features(full)
@@ -128,6 +136,6 @@ def predict(country, d):
     if env and all(c in d.columns for c in feats):      # 환경 parquet 이 없으면 경로 모델만
         has = d[env].notna().any(axis=1).to_numpy()
         if has.any():
-            p[has] = full["clf"].predict_proba(d.loc[has, feats])[:, 1]
+            p[has] = prob(full, d.loc[has, feats])
             h[has] = full["reg"].predict(d.loc[has, feats])
     return p, h

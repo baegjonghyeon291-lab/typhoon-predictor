@@ -38,7 +38,7 @@ def export_models():
     out = {"features": FEATURES}
     for c in ["korea", "japan"]:
         m = joblib.load(ROOT / "models" / f"{c}.joblib")
-        out[c] = {"clf": tree_json(m["clf"]), "reg": tree_json(m["reg"])}
+        out[c] = {"clf": tree_json(m["clf"]), "reg": tree_json(m["reg"]), "calib": m.get("calib")}
     (OUT / "model.json").write_text(json.dumps(out, separators=(",", ":")))
 
 

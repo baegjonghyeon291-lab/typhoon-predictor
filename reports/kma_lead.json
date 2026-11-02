@@ -172,9 +172,9 @@
   },
   "our_model_korea_full": {
     "storms": 28,
-    "median_warning_lead_h": 33.0,
-    "warned_24h_before": 0.714,
-    "warned_48h_before": 0.214,
+    "median_warning_lead_h": 42.0,
+    "warned_24h_before": 0.75,
+    "warned_48h_before": 0.321,
     "warned_72h_before": 0.143,
     "warned_96h_before": 0.107,
     "warned_120h_before": 0.107

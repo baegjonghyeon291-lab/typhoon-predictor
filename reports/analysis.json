@@ -7,7 +7,7 @@
       "p75_h": 240.0
     },
     "japan": {
-      "storms": 532,
+      "storms": 533,
       "median_h": 156.0,
       "p25_h": 102.0,
       "p75_h": 216.0
@@ -16,7 +16,7 @@
   "model_warning_lead": {
     "korea": {
       "storms": 28,
-      "median_warning_lead_h": 24.0,
+      "median_warning_lead_h": 27.0,
       "warned_24h_before": 0.607,
       "warned_48h_before": 0.429,
       "warned_72h_before": 0.143,
@@ -24,33 +24,33 @@
       "warned_120h_before": 0.0
     },
     "japan": {
-      "storms": 90,
-      "median_warning_lead_h": 60.0,
-      "warned_24h_before": 0.711,
-      "warned_48h_before": 0.533,
-      "warned_72h_before": 0.333,
-      "warned_96h_before": 0.256,
-      "warned_120h_before": 0.167
+      "storms": 91,
+      "median_warning_lead_h": 66.0,
+      "warned_24h_before": 0.747,
+      "warned_48h_before": 0.604,
+      "warned_72h_before": 0.418,
+      "warned_96h_before": 0.275,
+      "warned_120h_before": 0.209
     }
   },
   "model_warning_lead_full": {
     "korea": {
       "storms": 28,
-      "median_warning_lead_h": 33.0,
-      "warned_24h_before": 0.714,
-      "warned_48h_before": 0.214,
+      "median_warning_lead_h": 42.0,
+      "warned_24h_before": 0.75,
+      "warned_48h_before": 0.321,
       "warned_72h_before": 0.143,
       "warned_96h_before": 0.107,
       "warned_120h_before": 0.107
     },
     "japan": {
-      "storms": 90,
-      "median_warning_lead_h": 48.0,
-      "warned_24h_before": 0.678,
-      "warned_48h_before": 0.511,
-      "warned_72h_before": 0.322,
-      "warned_96h_before": 0.233,
-      "warned_120h_before": 0.156
+      "storms": 91,
+      "median_warning_lead_h": 66.0,
+      "warned_24h_before": 0.758,
+      "warned_48h_before": 0.615,
+      "warned_72h_before": 0.44,
+      "warned_96h_before": 0.286,
+      "warned_120h_before": 0.176
     }
   },
   "agency_tracking_start": {
@@ -65,30 +65,30 @@
       "median_abs_turn_deg": 47.2
     },
     "japan": {
-      "storms": 523,
+      "storms": 524,
       "median_abs_turn_deg": 39.9
     }
   },
   "feature_importance": {
     "korea": {
-      "doy": 0.0883,
-      "dist_seoul": 0.0764,
-      "LON": 0.0509,
-      "dist_tokyo": 0.0117,
-      "atm_ridge_dlon": 0.0083,
-      "dlat_6": 0.0081,
-      "bearing_tokyo": 0.0067,
-      "atm_dz_max": 0.0063
+      "doy": 0.0848,
+      "dist_seoul": 0.0752,
+      "LON": 0.0557,
+      "dist_tokyo": 0.0109,
+      "bearing_tokyo": 0.0083,
+      "atm_ridge_dlon": 0.0073,
+      "dlat_6": 0.0065,
+      "atm_dz_max": 0.0064
     },
     "japan": {
-      "doy": 0.0881,
-      "dist_tokyo": 0.0558,
-      "LON": 0.0539,
-      "dist_seoul": 0.0407,
-      "atm_ridge_dlon": 0.0084,
-      "bearing_seoul": 0.0048,
-      "LAT": 0.0045,
-      "bearing_tokyo": 0.0043
+      "doy": 0.0786,
+      "dist_tokyo": 0.0575,
+      "LON": 0.0547,
+      "dist_seoul": 0.0413,
+      "atm_ridge_dlon": 0.0082,
+      "bearing_seoul": 0.0052,
+      "dlon_6": 0.0046,
+      "bearing_tokyo": 0.0037
     }
   }
 }

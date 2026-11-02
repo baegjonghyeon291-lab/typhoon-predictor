@@ -52,7 +52,8 @@ function runTrees(m, x) {
 function predict(model, country, feats) {
   const x = model.features.map(f => (feats[f] ?? NaN));
   const m = model[country];
-  return { p: 1 / (1 + Math.exp(-runTrees(m.clf, x))), hours: runTrees(m.reg, x) };
+  const [a, b] = m.calib || [1, 0];          // Platt 보정(typhoon/train.py calibration)
+  return { p: 1 / (1 + Math.exp(-(a * runTrees(m.clf, x) + b))), hours: runTrees(m.reg, x) };
 }
 
 if (typeof module !== "undefined") module.exports = { makeFeatures, predict, runTrees };
