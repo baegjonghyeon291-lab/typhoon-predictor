@@ -171,8 +171,10 @@ def fill(df, workers=8):
         if c not in df:
             df[c] = np.nan
         df.loc[need, c] = g.loc[need[need].index, c]
-    n = int(g.loc[need[need].index].drop(columns=["SID", "time"]).notna().any(axis=1).sum())
-    print(f"[gfs] 환경 특성 채움 {n}/{int(need.sum())}개 시점")
+    got = g.loc[need[need].index].drop(columns=["SID", "time"]).notna().any(axis=1)
+    df["env_src"] = np.where(~empty, "ncep", None)
+    df.loc[got[got].index, "env_src"] = "gfs"
+    print(f"[gfs] 환경 특성 채움 {int(got.sum())}/{int(need.sum())}개 시점")
     return df
 
 

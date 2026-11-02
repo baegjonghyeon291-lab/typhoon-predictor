@@ -121,7 +121,8 @@ def export_recent(df, models, live=False):
         g = predict_rows(df[df.SID == sid], models)
         last = g.iloc[-1]
         s = {"sid": sid, "name": str(g.NAME.iloc[0]), "grade": num(last.TOKYO_GRADE, 0), "start": g.time.min().strftime("%Y-%m-%dT%H"),
-             "end": last.time.strftime("%Y-%m-%dT%H"), "track": track(g, ["p_korea", "p_japan"])}
+             "end": last.time.strftime("%Y-%m-%dT%H"), "track": track(g, ["p_korea", "p_japan"]),
+             "env": src if isinstance(src := last.get("env_src"), str) else None}  # 마지막 예측에 쓴 상공 자료: gfs·ncep, 없으면 경로만
         for c in models:
             hit = g[g[f"in_{c}"]]
             if len(hit):
@@ -180,6 +181,12 @@ def refresh_sources(atmos_timeout=900):
         warnings.warn(f"IBTrACS 갱신 실패, 기존 자료 사용: {type(e).__name__}", RuntimeWarning)
     import os
     import signal
+    from .env_atmos import server_last_day, needs_update
+    # NCEP 재분석은 2026-03-17에서 멈췄다. 서버 자료로 새로 채울 시점이 있을 때만 다시 받는다(그 뒤는 env_gfs 가 채움)
+    srv = server_last_day()
+    if not needs_update(srv):
+        print(f"[atmos] NCEP 재분석으로 새로 채울 시점 없음(서버 마지막 {srv.date()}), 받기 생략")
+        return
     # 하위 프로세스(병렬 받기 작업자 포함)를 한 그룹으로 묶어, 제한시간이 지나면 모두 끝낸다
     proc = subprocess.Popen([sys.executable, "-m", "typhoon.env_atmos", "--recent"], cwd=ROOT,
                             start_new_session=True)

@@ -54,6 +54,32 @@ def _fetch(var, year, retries=4):
     return var, year, repr(last)
 
 
+def server_last_day(year=None):
+    """서버 hgt 파일의 마지막 날짜(메타데이터만 읽음). 실패하면 None."""
+    year = year or dt.datetime.utcnow().year
+    try:
+        with xr.open_dataset(BASE.format(var="hgt", year=year)) as ds:
+            return pd.Timestamp(ds.time.values[-1]).normalize()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def needs_update(server_day):
+    """최근 2년 태풍 시점 중 영역 안인데 특성이 비어 있고, 필요한 날(전날)이 서버에 있는 시점이 있으면 True."""
+    if server_day is None:
+        return True
+    if not OUT.exists():
+        return True
+    df = load()
+    df = df[df["time"].dt.year >= dt.datetime.utcnow().year - 1][["SID", "time", "LAT", "LON"]]
+    f = pd.read_parquet(OUT)
+    cols = [c for c in f.columns if c.startswith("atm_")]
+    m = df.merge(f[["SID", "time"] + cols], on=["SID", "time"], how="left")
+    inside = m["LAT"].between(0, 60) & (m["LON"] % 360).between(100, 180)
+    day = m["time"].dt.normalize() - pd.Timedelta(days=1)
+    return bool((m[cols].isna().all(axis=1) & inside & (day <= server_day)).any())
+
+
 def download(years, force_years=(), workers=6):
     """years 중 캐시 없는 것(및 force_years)을 병렬로 받는다. 실패 목록 반환."""
     NCEP.mkdir(parents=True, exist_ok=True)

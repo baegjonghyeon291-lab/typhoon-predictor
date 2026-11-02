@@ -264,6 +264,7 @@ function renderNow(latest) {
     mapEl.querySelectorAll(".tc-p").forEach(e => e.classList.toggle("hot", n != null && e.classList.contains("tc-s" + n)));
   };
   const name = s => s.name === "UNNAMED" ? "이름 없음" : s.name;
+  const ENV_SRC = { gfs: "상공 바람·고기압 반영 (NOAA GFS 분석장, 전날 평균)", ncep: "상공 바람·고기압 반영 (NOAA 재분석, 전날 평균)" };
   const bind = (el, n, s) => {
     const fly = () => map.flyToBounds(s.track.map(t => [t[1], t[2]]), { ...pad(), duration: 1.1 });
     el.addEventListener("click", fly);
@@ -300,7 +301,8 @@ function renderNow(latest) {
       li.style.animationDelay = `${liveN * 90}ms`;
       li.innerHTML = `<div class="s-head"><b>${name(s)}</b>${kt != null || s.grade != null ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${lvName(kt, s.grade)}</span>` : ""}</div>`
         + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
-        + row("korea", "한국") + row("japan", "일본");
+        + row("korea", "한국") + row("japan", "일본")
+        + `<div class="src">${ENV_SRC[s.env] || "경로만으로 예측(상공 자료 없음)"}</div>`;
       list.appendChild(li); liveN++;
     } else {
       L.marker([last[1], last[2]], { interactive: false, keyboard: false, icon: L.divIcon({ className: `tc-icon ${cls}`, iconSize: [18, 18], iconAnchor: [9, 9], html: `<div class="tc-end" style="color:${LV[idx].color}"><i></i><div class="tc-label">${name(s)}</div></div>` }) }).addTo(layer);
