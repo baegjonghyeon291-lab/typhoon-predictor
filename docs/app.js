@@ -354,7 +354,7 @@ function renderSim(model) {
     [["korea", "simK", "simKeta", "simKbar"], ["japan", "simJ", "simJeta", "simJbar"]].forEach(([c, id, eid, bid]) => {
       const r = predict(model, c, f);
       $(id).textContent = pct(r.p);
-      $(eid).textContent = r.p >= .2 ? `약 ${Math.max(0, Math.round(r.hours))}시간 뒤${r.lo != null ? ` (${Math.round(Math.min(r.lo, r.hours))}~${Math.round(Math.max(r.hi, r.hours))}시간)` : ""}` : "";
+      $(eid).textContent = r.p >= .2 ? `약 ${Math.max(0, Math.round(r.hours))}시간 뒤${r.lo != null ? ` (${Math.round(Math.max(0, Math.min(r.lo, r.hours)))}~${Math.round(Math.max(r.hi, r.hours))}시간)` : ""}` : "";
       setBar($(bid), r.p);
     });
     const ahead = [pos];

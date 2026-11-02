@@ -158,7 +158,7 @@ def export_recent(df, models, live=False):
                         "eta": (last.time + pd.Timedelta(hours=float(last[f"h_{c}"]))).strftime("%Y-%m-%dT%H")}
                 if not pd.isna(last[f"lo_{c}"]):          # 남은 시간 80% 범위(시간)
                     h = last[f"h_{c}"]                    # 표시용: 범위가 점 예측을 늘 감싸게
-                    s[c]["range"] = [num(min(last[f"lo_{c}"], h), 0), num(max(last[f"hi_{c}"], h), 0)]
+                    s[c]["range"] = [num(max(min(last[f"lo_{c}"], h), 0), 0), num(max(last[f"hi_{c}"], h), 0)]
         storms.append(s)
     storms.sort(key=lambda s: s["end"], reverse=True)
     if live:
