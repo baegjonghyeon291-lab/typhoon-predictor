@@ -69,10 +69,20 @@ def _resolve(r, df):
     return near.SID.values[np.argmin(d)] if d.min() <= 300 else None
 
 
-def check(df=None):
-    """태풍이 끝난(IBTrACS에 기록 시각 뒤 5일 이상 자료가 있거나 소멸한) 기록만 실제 도착과 맞춘다."""
-    from .data import load
-    df = load() if df is None else df
+def check(df=None, refresh=True):
+    """태풍이 끝난 기록만 실제 도착과 맞춘다. '끝남'은 벽시계가 아니라 받은 IBTrACS 자료 끝 기준:
+    자료가 발표 뒤 5일 이상 이어지거나, 그 태풍 기록이 자료 끝보다 3일 이상 먼저 끝난(소멸) 경우.
+    (오래된 로컬 파일로 중간에 잘린 경로를 '도착 안 함'으로 세지 않도록 기본으로 새로 받는다.)
+    이미 영향권에 들어온 뒤에 기록된 판정은 예측이 아니므로 그 나라에서는 뺀다."""
+    from .data import load, download
+    if df is None:
+        if refresh:
+            try:
+                download()
+            except Exception as e:  # noqa: BLE001
+                print(f"[forecast_log] IBTrACS 새로 받기 실패, 로컬 파일 사용: {type(e).__name__}")
+        df = load()
+    data_end = df.time.max()
     rows = _read()
     out = []
     for r in rows:
@@ -81,12 +91,15 @@ def check(df=None):
             continue
         g = df[df.SID == sid]
         issued = pd.Timestamp(r["issued"])
-        done = g.time.max() >= issued + pd.Timedelta(hours=120) or g.time.max() < pd.Timestamp.utcnow().tz_localize(None) - pd.Timedelta(days=3)
+        t0 = pd.Timestamp(r["position"]["time"])
+        done = data_end >= issued + pd.Timedelta(hours=120) or g.time.max() < data_end - pd.Timedelta(days=3)
         if not done:
             continue
         for c in COUNTRIES:
             a = r["approach"].get(c, {})
-            hit = g[(g.time > issued) & g[f"in_{c}"]].time
+            if "arrived" in (r["model"].get(c) or {}) or g[(g.time <= t0) & g[f"in_{c}"]].size:
+                continue          # 기록 시점에 이미 영향권에 들어온 뒤
+            hit = g[(g.time > t0) & g[f"in_{c}"]].time
             arrived = hit.min() if len(hit) and hit.min() <= issued + pd.Timedelta(hours=120) else None
             out.append({"sid": sid, "name": r["name"], "issued": r["issued"], "country": c,
                         "fc_center": a.get("center") is not None, "fc_cone": a.get("cone") is not None,
