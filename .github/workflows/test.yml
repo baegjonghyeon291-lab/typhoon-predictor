@@ -1,0 +1,27 @@
+name: 테스트
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/data/latest.json"
+      - "docs/data/history.json"
+      - "docs/data/stats.json"
+      - "data/forecast_log.jsonl"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q
