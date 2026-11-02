@@ -13,6 +13,7 @@
 | 자료 | 출처 | 쓰는 값 |
 |---|---|---|
 | NCEP/NCAR Reanalysis 1 일평균 | NOAA PSL (OPeNDAP로 0–60N, 100–180E만) | 850·500·200hPa 바람(지향류, 연직 시어), 500hPa 고도(북태평양 고기압 위치·세기) |
+| GFS 분석장(f000) 일평균 | NOAA, AWS 공개 버킷 `noaa-gfs-bdp-pds` (필요한 필드만 바이트 범위로) | NCEP와 같은 값. NCEP가 끝난 2026-03-17 이후 시점을 채운다 |
 | ERSST v5 월평균 해수면온도 | NOAA PSL | (모델에는 안 씀) 태풍 위치·북쪽 5° 해수온, 1991–2020 대비 편차 |
 | ONI, PDO, Niño4 | NOAA CPC, NCEI, PSL | 엘니뇨·태평양 10년 진동 상태 |
 
@@ -40,7 +41,7 @@
 | 한국 (환경 모델) | 0.911 | 14.8시간 | 28 |
 | 일본 (환경 모델) | 0.907 | 16.0시간 | 90 |
 
-환경 모델은 재분석 자료가 있는 시점에만 쓰고, 없는 시점(재분석 서버가 아직 갱신 안 된 최근 등)은 경로 모델로 대체한 실제 서비스 방식 기준이다. 검증 기간 중 환경 자료가 있는 시점은 약 93%. 해수온·기후 지수를 넣은 조합은 오히려 성능이 떨어져 뺐다(`reports/env_experiment.txt`).
+환경 모델은 재분석 자료가 있는 시점에만 쓰고, 없는 시점(재분석 서버가 아직 갱신 안 된 최근 등)은 경로 모델로 대체한 실제 서비스 방식 기준이다. 검증 기간 중 환경 자료가 있는 시점은 약 93%. NCEP 재분석이 2026-03-17에서 멈춰서, 사이트 갱신 때는 그 뒤 시점을 GFS 분석장(분석 약 4시간 뒤 공개)으로 채워 지금 태풍에도 환경 모델을 쓴다. 겹치는 2021-06~2026-03에서 GFS 특성으로 바꿔도 성능이 같다(한국 AUC 0.875 → 0.876, `reports/gfs_comparison.txt`). 해수온·기후 지수를 넣은 조합은 오히려 성능이 떨어져 뺐다(`reports/env_experiment.txt`).
 
 | 모델 첫 경보, 도착 전(중앙값) | 경로 모델 | 환경 모델 |
 |---|---|---|
@@ -69,6 +70,7 @@
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m typhoon.env_ocean  # 해수온·기후 지수(실험용, 모델에는 안 씀) → data/env/ocean_features.parquet
 .venv/bin/python -m typhoon.env_atmos  # 재분석 대기 특성 → data/env/atmos_features.parquet
+.venv/bin/python -m typhoon.env_gfs --compare  # GFS 분석장 vs NCEP 특성 비교 → reports/gfs_comparison.txt
 .venv/bin/python -m typhoon.train      # 학습 → models/, reports/metrics.json
 .venv/bin/python -m typhoon.analyze    # 분석 → reports/analysis.json
 .venv/bin/python -m typhoon.predict --update   # 최신 데이터 받아 가장 최근 태풍 예측

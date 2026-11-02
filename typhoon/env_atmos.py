@@ -128,7 +128,12 @@ def _bilinear(field, ti, lat, lon, glat, glon):
 
 def features_year(year, pts):
     """pts: 해당 연도 행(LAT, LON, time). 같은 인덱스의 atm_* DataFrame 반환."""
-    dates, glat, glon, z, u, v = _open_year(year)
+    return features_from(*_open_year(year), pts)
+
+
+def features_from(dates, glat, glon, z, u, v, pts):
+    """일평균 격자(2.5°, lat 오름차순, lon 100~180E, u·v 기압면 순서는 VARS)로 atm_* 계산.
+    NCEP 재분석과 GFS 분석장(env_gfs)이 같은 계산을 쓴다."""
     # 실시간 예측과 같은 조건: 그 시점엔 당일 평균이 아직 없으니 전날 평균을 쓴다
     day = pd.to_datetime(pts["time"]).dt.normalize() - pd.Timedelta(days=1)
     ti = pd.Index(dates).get_indexer(day)          # 없는 날(올해 미래 등)은 -1

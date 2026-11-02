@@ -14,3 +14,4 @@ data/jma/
 previews/
 previews2/
 data/env/era5_features.parquet
+data/env/gfs/

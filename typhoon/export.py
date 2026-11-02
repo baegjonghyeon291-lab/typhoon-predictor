@@ -201,7 +201,7 @@ def main():
     base = load()
     full = realtime.merge(base)
     live = len(full) > len(base)
-    df = add_env(add_features(full))
+    df = add_env(add_features(full), gfs=True)
     models = ["korea", "japan"]
     export_models()
     export_frost()

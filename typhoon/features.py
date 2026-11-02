@@ -67,14 +67,18 @@ def add_targets(df, country):
     return df
 
 
-def add_env(df, files=None):
+def add_env(df, files=None, gfs=False):
     """data/env/ 의 대기 특성(env_atmos 출력)을 시점별로 붙인다. 없으면 그대로.
-    files: 다른 특성 파일(예: ERA5)로 바꿔 붙일 때 파일명 또는 경로 목록."""
+    files: 다른 특성 파일(예: ERA5)로 바꿔 붙일 때 파일명 또는 경로 목록.
+    gfs: 재분석이 없는 시점(2026-03-17 이후 등)을 GFS 분석장으로 채운다(네트워크 사용, env_gfs)."""
     for f in (files or ENV_FILES):
         p = Path(f) if Path(f).is_absolute() else ROOT / "data" / "env" / f
         if p.exists():
             env = pd.read_parquet(p)
             df = df.merge(env.drop_duplicates(["SID", "time"]), on=["SID", "time"], how="left")
+    if gfs:
+        from .env_gfs import fill
+        df = fill(df)
     if "atm_z500" in df:
         df["atm_dz_ew"] = df.atm_z500_e - df.atm_z500_w
         df["atm_dz_n"] = df.atm_z500_n - df.atm_z500
