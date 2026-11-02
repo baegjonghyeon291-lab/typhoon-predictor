@@ -125,17 +125,37 @@ def prob(m, X):
     return 1 / (1 + np.exp(-(a * m["clf"].decision_function(X) + b)))
 
 
-def predict(country, d):
-    """도달 확률과 남은 시간. 환경 자료가 있는 시점은 환경 모델, 없으면(최근 재분석 미갱신 등) 경로 모델."""
+def _by_model(country, d):
+    """(모델, 특성, 행 마스크) 목록. 환경 자료가 있는 시점은 환경 모델, 없으면(최근 재분석 미갱신 등) 경로 모델."""
     track = load_model(country, full=False)
-    p = prob(track, d[FEATURES])
-    h = track["reg"].predict(d[FEATURES])
+    out = [(track, FEATURES, np.ones(len(d), bool))]
     full = load_model(country)
     feats = model_features(full)
     env = [c for c in ENV_FEATURES if c in feats]
     if env and all(c in d.columns for c in feats):      # 환경 parquet 이 없으면 경로 모델만
         has = d[env].notna().any(axis=1).to_numpy()
         if has.any():
-            p[has] = prob(full, d.loc[has, feats])
-            h[has] = full["reg"].predict(d.loc[has, feats])
+            out[0][2][has] = False
+            out.append((full, feats, has))
+    return out
+
+
+def predict(country, d):
+    """도달 확률과 남은 시간."""
+    p, h = np.zeros(len(d)), np.zeros(len(d))
+    for m, feats, mask in _by_model(country, d):
+        if mask.any():
+            p[mask] = prob(m, d.loc[mask, feats])
+            h[mask] = m["reg"].predict(d.loc[mask, feats])
     return p, h
+
+
+def predict_range(country, d):
+    """남은 시간의 80% 범위(하위·상위). 10%·90% 분위 모델에 교차 예측으로 맞춘 폭 보정(delta)을 더한다.
+    범위 모델이 없는 예전 모델 파일이면 NaN."""
+    lo, hi = np.full(len(d), np.nan), np.full(len(d), np.nan)
+    for m, feats, mask in _by_model(country, d):
+        if mask.any() and "lo" in m:
+            lo[mask] = np.maximum(m["lo"].predict(d.loc[mask, feats]) - m["delta"], 0)
+            hi[mask] = m["hi"].predict(d.loc[mask, feats]) + m["delta"]
+    return lo, hi

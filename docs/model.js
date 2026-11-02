@@ -53,7 +53,12 @@ function predict(model, country, feats) {
   const x = model.features.map(f => (feats[f] ?? NaN));
   const m = model[country];
   const [a, b] = m.calib || [1, 0];          // Platt 보정(typhoon/train.py calibration)
-  return { p: 1 / (1 + Math.exp(-(a * runTrees(m.clf, x) + b))), hours: runTrees(m.reg, x) };
+  const out = { p: 1 / (1 + Math.exp(-(a * runTrees(m.clf, x) + b))), hours: runTrees(m.reg, x) };
+  if (m.lo) {                                  // 남은 시간 80% 범위(typhoon/features.py predict_range)
+    out.lo = Math.max(runTrees(m.lo, x) - m.delta, 0);
+    out.hi = runTrees(m.hi, x) + m.delta;
+  }
+  return out;
 }
 
 if (typeof module !== "undefined") module.exports = { makeFeatures, predict, runTrees };

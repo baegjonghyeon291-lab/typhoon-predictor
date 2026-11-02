@@ -295,7 +295,7 @@ function renderNow(latest) {
         const v = s[c];
         if (v.arrived) return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="1"></u></i><b>도달</b></div><div class="eta">${kst(v.arrived)}</div>`;
         return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="${v.p}"></u></i><b>${pct(v.p)}</b></div>`
-          + (v.p >= .2 ? `<div class="eta">약 ${Math.max(0, v.hours)}시간 뒤 · ${kst(v.eta)} 도착 예상</div>` : "")
+          + (v.p >= .2 ? `<div class="eta">약 ${Math.max(0, v.hours)}시간 뒤${v.range ? ` (${v.range[0]}~${v.range[1]}시간)` : ""} · ${kst(v.eta)} 도착 예상</div>` : "")
           + fcLine(s.forecast?.approach?.[c]);
       };
       // 일본 기상청 5일 예보 진로가 영향권(도시 200km)에 들어오는지: 중심 진입 > 70% 확률 원 닿음 > 최단 거리
@@ -354,7 +354,7 @@ function renderSim(model) {
     [["korea", "simK", "simKeta", "simKbar"], ["japan", "simJ", "simJeta", "simJbar"]].forEach(([c, id, eid, bid]) => {
       const r = predict(model, c, f);
       $(id).textContent = pct(r.p);
-      $(eid).textContent = r.p >= .2 ? `약 ${Math.max(0, Math.round(r.hours))}시간 뒤` : "";
+      $(eid).textContent = r.p >= .2 ? `약 ${Math.max(0, Math.round(r.hours))}시간 뒤${r.lo != null ? ` (${Math.round(Math.min(r.lo, r.hours))}~${Math.round(Math.max(r.hi, r.hours))}시간)` : ""}` : "";
       setBar($(bid), r.p);
     });
     const ahead = [pos];

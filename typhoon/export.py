@@ -9,7 +9,7 @@ import pandas as pd
 
 from .data import load, download, min_dist, ROOT, CITIES, RADIUS_KM
 from . import realtime
-from .features import add_features, add_targets, add_env, predict, FEATURES
+from .features import add_features, add_targets, add_env, predict, predict_range, FEATURES
 from .train import SPLIT_YEAR
 
 OUT = ROOT / "docs" / "data"
@@ -39,6 +39,8 @@ def export_models():
     for c in ["korea", "japan"]:
         m = joblib.load(ROOT / "models" / f"{c}.joblib")
         out[c] = {"clf": tree_json(m["clf"]), "reg": tree_json(m["reg"]), "calib": m.get("calib")}
+        if "lo" in m:                                   # 남은 시간 80% 범위(features.predict_range)
+            out[c].update(lo=tree_json(m["lo"]), hi=tree_json(m["hi"]), delta=m["delta"])
     (OUT / "model.json").write_text(json.dumps(out, separators=(",", ":")))
 
 
@@ -80,6 +82,7 @@ def predict_rows(d, models):
     d = d.copy()
     for c in models:
         d[f"p_{c}"], d[f"h_{c}"] = predict(c, d)
+        d[f"lo_{c}"], d[f"hi_{c}"] = predict_range(c, d)
     return d
 
 
@@ -153,6 +156,9 @@ def export_recent(df, models, live=False):
             else:
                 s[c] = {"p": num(last[f"p_{c}"], 3), "hours": num(last[f"h_{c}"], 0),
                         "eta": (last.time + pd.Timedelta(hours=float(last[f"h_{c}"]))).strftime("%Y-%m-%dT%H")}
+                if not pd.isna(last[f"lo_{c}"]):          # 남은 시간 80% 범위(시간)
+                    h = last[f"h_{c}"]                    # 표시용: 범위가 점 예측을 늘 감싸게
+                    s[c]["range"] = [num(min(last[f"lo_{c}"], h), 0), num(max(last[f"hi_{c}"], h), 0)]
         storms.append(s)
     storms.sort(key=lambda s: s["end"], reverse=True)
     if live:
