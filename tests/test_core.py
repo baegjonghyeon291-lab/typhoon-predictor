@@ -167,4 +167,6 @@ def test_browser_model_matches_python(country, tmp_path):
           f"console.log(JSON.stringify(rows.map(r => {{ const q = predict(M, '{country}', r);"
           f" return [q.p, q.hours, q.lo, q.hi]; }})));")
     out = subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout
-    assert np.allclose(np.array(json.loads(out)), py, atol=1e-6)
+    js = np.array(json.loads(out))
+    assert np.allclose(js[:, 0], py[:, 0], atol=1e-6)            # 확률(잎 값 7자리 반올림 오차)
+    assert np.allclose(js[:, 1:], py[:, 1:], atol=1e-3)          # 시간

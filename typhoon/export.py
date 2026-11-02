@@ -26,7 +26,8 @@ def tree_json(model):
         nodes = []
         for n in it[0].nodes:
             if n["is_leaf"]:
-                nodes.append([float(n["value"])])
+                # 잎 값은 7자리로(파일 35% 감소, 결과 차이 1e-6 수준). 분기 기준값은 자료값과 맞물려 있어 줄이면 안 됨
+                nodes.append([float(f"{n['value']:.7g}")])
             else:
                 nodes.append([int(n["feature_idx"]), min(float(n["num_threshold"]), 1e300),
                               int(n["missing_go_to_left"]), int(n["left"]), int(n["right"])])
