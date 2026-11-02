@@ -16,6 +16,10 @@ from .data import load, ROOT
 from .features import add_features, add_targets, add_env, env_columns, predict, prob, model_features, FEATURES
 
 SPLIT_YEAR = 2015
+# 분류 모델 설정. 기본값(max_iter 400, lr 0.05)은 학습 자료를 외워 과신해서, 학습을 느리게 하고 나무를 작게 했다.
+# 검증(2015~, 환경 모델): 한국 Brier 0.0344 → 0.0336, 일본 AUC 0.885 → 0.896, 한국 48시간 전 경보 32% → 39%
+CLF_PARAMS = dict(max_iter=800, learning_rate=0.02, max_leaf_nodes=15, min_samples_leaf=300, max_features=0.5,
+                  random_state=0)
 
 
 def calibration(tr, features):
@@ -24,7 +28,7 @@ def calibration(tr, features):
     검증(2015~)에서 한국 '50~70%'가 실제 38%로 과신, 일본 '10~20%'가 실제 24%로 과소였던 것을 바로잡는다."""
     oof = np.zeros(len(tr))
     for a, b in GroupKFold(5).split(tr, tr.hit, tr.SID):
-        m = HistGradientBoostingClassifier(max_iter=400, learning_rate=0.05, random_state=0)
+        m = HistGradientBoostingClassifier(**CLF_PARAMS)
         m.fit(tr.iloc[a][features], tr.hit.iloc[a])
         oof[b] = m.decision_function(tr.iloc[b][features])
     lr = LogisticRegression().fit(oof[:, None], tr.hit)
@@ -34,7 +38,7 @@ def calibration(tr, features):
 def train_country(df, country, features, name):
     d = add_targets(df, country)
     tr, te = d[d.SEASON < SPLIT_YEAR], d[d.SEASON >= SPLIT_YEAR]
-    clf = HistGradientBoostingClassifier(max_iter=400, learning_rate=0.05, random_state=0)
+    clf = HistGradientBoostingClassifier(**CLF_PARAMS)
     clf.fit(tr[features], tr.hit)
     calib = calibration(tr, features)
     raw = clf.predict_proba(te[features])[:, 1]
