@@ -295,8 +295,12 @@ function renderNow(latest) {
         const v = s[c];
         if (v.arrived) return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="1"></u></i><b>도달</b></div><div class="eta">${kst(v.arrived)}</div>`;
         return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="${v.p}"></u></i><b>${pct(v.p)}</b></div>`
-          + (v.p >= .2 ? `<div class="eta">약 ${Math.max(0, v.hours)}시간 뒤 · ${kst(v.eta)} 도착 예상</div>` : "");
+          + (v.p >= .2 ? `<div class="eta">약 ${Math.max(0, v.hours)}시간 뒤 · ${kst(v.eta)} 도착 예상</div>` : "")
+          + fcLine(s.forecast?.approach?.[c]);
       };
+      // 일본 기상청 5일 예보 진로가 영향권(도시 200km)에 들어오는지: 중심 진입 > 70% 확률 원 닿음 > 최단 거리
+      const fcLine = a => !a ? "" : `<div class="eta fcx">일본 기상청 예보: ${a.center ? `<b>${kst(a.center)}</b> 영향권 진입`
+        : a.cone ? `중심은 최단 ${a.min_km}km, 70% 확률 원은 ${kst(a.cone)}부터 영향권에 닿음` : `최단 ${a.min_km}km, 5일 안 영향권 밖`}</div>`;
       const L1 = LV[idx];
       li.style.animationDelay = `${liveN * 90}ms`;
       li.innerHTML = `<div class="s-head"><b>${name(s)}</b>${kt != null || s.grade != null ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${lvName(kt, s.grade)}</span>` : ""}</div>`

@@ -7,7 +7,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from .data import load, download, ROOT
+from .data import load, download, min_dist, ROOT, CITIES, RADIUS_KM
 from . import realtime
 from .features import add_features, add_targets, add_env, predict, FEATURES
 from .train import SPLIT_YEAR
@@ -88,6 +88,22 @@ def track(g, extra=()):
             for t, la, lo, w, p, (_, r) in zip(g.time, g.LAT, g.LON, g.wind, g.pres, g.iterrows())]
 
 
+def approach(path):
+    """예보 진로(시각, 위도, 경도, 70% 반경 km)를 1시간 간격으로 이어 나라별 영향권 접근 판정.
+    center: 중심이 도시 200km 안에 처음 들어오는 시각, cone: 70% 확률 원이 그 영역에 처음 닿는 시각,
+    min_km: 예보 기간 중 중심과 가장 가까운 도시까지 거리."""
+    t = pd.to_datetime([p[0] for p in path])
+    hrs = ((t - t[0]) / pd.Timedelta(hours=1)).to_numpy(float)
+    grid = np.arange(0, hrs[-1] + 1)
+    lat, lon, r = (np.interp(grid, hrs, [p[k] or 0 for p in path]) for k in (1, 2, 3))
+    out = {}
+    for c in CITIES:
+        d = min_dist(lat, lon, c)
+        first = lambda ok: (t[0] + pd.Timedelta(hours=float(grid[ok][0]))).strftime("%Y-%m-%dT%H") if ok.any() else None
+        out[c] = {"center": first(d <= RADIUS_KM), "cone": first(d - r <= RADIUS_KM), "min_km": num(d.min(), 0)}
+    return out
+
+
 def latest_forecasts():
     """일본 기상청 5일 예보(가장 최근 발표)를 태풍 이름별로. 예보 중심 위치와 70% 확률 반경(km)."""
     from .sources import jma
@@ -100,16 +116,23 @@ def latest_forecasts():
     if not rows:
         return {}
     d = pd.DataFrame(rows)
-    d = d[d.lead_h > 0]
     out = {}
     for name, g in d.groupby("name"):
         g = g[g.report_time == g.report_time.max()].sort_values("lead_h")
         if (g.info_type == "取消").any():          # 가장 최근 발표가 취소면 그 전 예보는 폐기
             continue
+        fc = g[g.lead_h > 0]
+        if fc.empty:
+            continue
         issued = pd.to_datetime(g.report_time.iloc[0], utc=True).strftime("%Y-%m-%dT%H")
         out[str(name).upper()] = {"issued": issued, "points": [
             [int(r.lead_h), num(r.lat, 1), num(r.lon, 1), num(r.radius70_km, 0), num(r.pressure_hpa, 0),
-             num(r.max_wind_ms, 0)] for r in g.itertuples()]}
+             num(r.max_wind_ms, 0)] for r in fc.itertuples()]}
+        # 실황(0시간) 위치에서 시작하는 예보 진로로 한국·일본 영향권 접근 판정(시각은 UTC)
+        path = [(pd.to_datetime(r.valid_time, utc=True).tz_localize(None), r.lat, r.lon, (r.radius70_km if r.lead_h and not pd.isna(r.radius70_km) else 0))
+                for r in g.itertuples() if r.lat is not None and not pd.isna(r.lat) and r.valid_time]
+        if len(path) >= 2 and path[0][0] < path[-1][0]:
+            out[str(name).upper()]["approach"] = approach(path)
     return out
 
 
