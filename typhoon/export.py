@@ -187,6 +187,19 @@ def export_history(df, models):
     return out
 
 
+def reliability(df, bins=(0, .1, .2, .3, .4, .5, .6, .8, 1.0001), min_n=20):
+    """검증 기간(2015~) 시점별 서비스 방식 예측 확률을 구간으로 묶어 [평균 예측, 실제 비율, 시점 수]."""
+    out = {}
+    for c in ["korea", "japan"]:
+        d = add_targets(df[df.SEASON >= SPLIT_YEAR], c)
+        p, _ = predict(c, d)
+        t = pd.DataFrame({"p": p, "y": d.hit.to_numpy()})
+        g = t.groupby(pd.cut(t.p, bins, right=False), observed=True).agg(pred=("p", "mean"), obs=("y", "mean"),
+                                                                           n=("y", "size"))
+        out[c] = [[round(float(r.pred), 3), round(float(r.obs), 3), int(r.n)] for r in g.itertuples() if r.n >= min_n]
+    return out
+
+
 def export_stats(df):
     hit = df[df.in_korea].groupby("SID").time.min()
     by_month = hit.dt.month.value_counts().reindex(range(1, 13), fill_value=0)
@@ -194,6 +207,7 @@ def export_stats(df):
     years = range(int(df.SEASON.min()), int(df.SEASON.max()) + 1)
     return {"metrics": json.loads((ROOT / "reports" / "metrics.json").read_text()),
             "analysis": json.loads((ROOT / "reports" / "analysis.json").read_text()),
+            "reliability": reliability(df),
             "korea_by_month": [int(v) for v in by_month.values],
             "korea_by_year": {str(y): int(by_year.get(y, 0)) for y in years}}
 

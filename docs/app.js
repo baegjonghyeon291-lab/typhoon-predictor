@@ -579,6 +579,42 @@ function renderStats(stats) {
   }, .2);
 }
 
+function renderReliability(rel) {
+  const ko = { korea: "한국", japan: "일본" };
+  const cs = ["korea", "japan"].filter(c => rel[c] && rel[c].length);
+  if (!cs.length) return;
+  $("relBox").hidden = false;
+  $("relTable").innerHTML = `<table><thead><tr><th></th><th>모델 확률</th><th>실제 비율</th><th>시점 수</th></tr></thead><tbody>`
+    + cs.map(c => rel[c].map(([p, o, n]) => `<tr><td>${ko[c]}</td><td>${Math.round(p * 100)}%</td><td>${Math.round(o * 100)}%</td><td>${n.toLocaleString()}</td></tr>`).join("")).join("")
+    + "</tbody></table>";
+  seen($("relChart").closest(".chart-box"), () => {
+    if (!window.Chart) return;
+    const sets = [{ label: "", data: [{ x: 0, y: 0 }, { x: 100, y: 100 }], borderColor: C.muted, borderDash: [4, 5], borderWidth: 1.2, pointRadius: 0, pointHitRadius: 0 }]
+      .concat(cs.map(c => ({
+        label: ko[c], data: rel[c].map(([p, o, n]) => ({ x: p * 100, y: o * 100, n })),
+        borderColor: C[c], backgroundColor: C[c], borderWidth: 2, pointRadius: 4.5, pointHoverRadius: 6, pointHitRadius: 12,
+        pointBorderColor: getComputedStyle(document.body).getPropertyValue("--s-stats").trim() || "#0c2a42", pointBorderWidth: 2,
+      })));
+    new Chart($("relChart"), {
+      type: "line", plugins: [endLabels],
+      data: { datasets: sets },
+      options: {
+        maintainAspectRatio: false, animation: false, layout: { padding: { right: 48, top: 6 } },
+        scales: {
+          x: { type: "linear", min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 20 }, title: { display: true, text: "모델이 말한 확률" } },
+          y: { min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 20 }, title: { display: true, text: "실제로 온 비율" } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: { filter: i => i.dataset.label, callbacks: {
+            title: () => "",
+            label: i => `${i.dataset.label}: 모델 ${i.parsed.x.toFixed(0)}% → 실제 ${i.parsed.y.toFixed(0)}% (시점 ${i.raw.n.toLocaleString()}개)` } },
+        },
+      },
+    });
+  }, .2);
+}
+
 /* ---------- 서리 ---------- */
 function renderFrost(fr) {
   const form = $("frostForm");
@@ -675,4 +711,5 @@ Promise.all(["latest", "stats", "history", "model", "kma_lead", "frost"].map(n =
     if (frost && frost.stations && frost.stations.length && frost.clf) guard("frost", frost, renderFrost);
     else { $("frost").hidden = true; $("navFrost").hidden = true; }
     guard("stats", stats && stats.korea_by_month && stats.korea_by_year && stats, renderStats);
+    guard("reliability", stats && stats.reliability, renderReliability);
   });

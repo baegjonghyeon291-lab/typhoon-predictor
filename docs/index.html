@@ -133,6 +133,14 @@
       <div id="monthBox"><h3>한국 영향 태풍, 월별</h3><div id="monthList"></div></div>
       <div class="chart-box"><h3>한국 영향 태풍, 연도별</h3><canvas id="yearChart"></canvas></div>
     </div>
+    <div class="rel-box" id="relBox" hidden>
+      <div class="chart-box">
+        <h3>확률은 믿을 만한가</h3>
+        <p class="rel-sub">모델이 말한 확률(가로)과 실제로 120시간 안에 영향권에 들어온 비율(세로). 점선에 가까울수록 정직하다. 검증 2015년~</p>
+        <canvas id="relChart"></canvas>
+      </div>
+      <details class="rel-table"><summary>표로 보기</summary><div id="relTable"></div></details>
+    </div>
   </div>
 </section>
 </main>
