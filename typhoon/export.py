@@ -7,7 +7,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from .data import load, download, min_dist, ROOT, CITIES, RADIUS_KM
+from .data import load, download, haversine, ROOT, CITIES, CITY_NAMES, RADIUS_KM
 from . import realtime
 from .features import add_features, add_targets, add_env, predict, predict_range, FEATURES
 from .train import SPLIT_YEAR
@@ -45,40 +45,6 @@ def export_models():
     (OUT / "model.json").write_text(json.dumps(out, separators=(",", ":")))
 
 
-def export_frost():
-    """서리 모델(브라우저 계산용)과 지점별 통계."""
-    from .frost import ASOS, STN_POS, build
-    if not ASOS.exists() or not (ROOT / "models" / "frost.joblib").exists():
-        return
-    m = joblib.load(ROOT / "models" / "frost.joblib")
-    d = pd.read_csv(ASOS, parse_dates=["TM"])
-    names = d.drop_duplicates("STN").set_index("STN").stn_name.to_dict()
-    d["m"] = d.TM.dt.month
-    rate = d.groupby(["STN", "m"]).frost.mean().unstack().reindex(columns=range(1, 13))
-    # 지점별 연도별 첫서리(8월 이후 첫 날)와 끝서리(다음 해 7월까지 마지막 날) 평균 달력일
-    d["season"] = np.where(d.TM.dt.month >= 8, d.TM.dt.year, d.TM.dt.year - 1)
-    fr = d[d.frost == 1]
-    first = fr.groupby(["STN", "season"]).TM.min().reset_index()
-    last = fr.groupby(["STN", "season"]).TM.max().reset_index()
-    def md(x):
-        return x.strftime("%m-%d")
-    def mean_day(ser):
-        ref = pd.to_datetime("2001-" + ser.dt.strftime("%m-%d"))
-        ref = ref.where(ref.dt.month >= 8, ref + pd.DateOffset(years=1))
-        return md(ref.mean()) if len(ref) else None
-    stations = []
-    for stn, (lat, lon) in STN_POS.items():
-        f = first[(first.STN == stn) & (first.season >= 2005)]
-        l = last[(last.STN == stn) & (last.season >= 2005)]
-        stations.append({"stn": int(stn), "name": names[stn], "lat": lat, "lon": lon,
-                         "rate": [num(v, 3) for v in rate.loc[stn].values],
-                         "first_avg": mean_day(f.TM), "last_avg": mean_day(l.TM)})
-    out = {"features": m["features"], "clf": tree_json(m["clf"]), "stations": stations,
-           "metrics": json.loads((ROOT / "reports" / "frost_metrics.json").read_text()),
-           "data_until": d.TM.max().strftime("%Y-%m-%d")}
-    (OUT / "frost.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
-
-
 def predict_rows(d, models):
     d = d.copy()
     for c in models:
@@ -95,16 +61,20 @@ def track(g, extra=()):
 def approach(path):
     """예보 진로(시각, 위도, 경도, 70% 반경 km)를 1시간 간격으로 이어 나라별 영향권 접근 판정.
     center: 중심이 도시 200km 안에 처음 들어오는 시각, cone: 70% 확률 원이 그 영역에 처음 닿는 시각,
-    min_km: 예보 기간 중 중심과 가장 가까운 도시까지 거리."""
+    min_km: 예보 기간 중 중심과 가장 가까운 도시까지 거리, near: 그 도시 이름, cities: 중심이 들어오는 도시별 시각(빠른 순)."""
     t = pd.to_datetime([p[0] for p in path])
     hrs = ((t - t[0]) / pd.Timedelta(hours=1)).to_numpy(float)
     grid = np.arange(0, hrs[-1] + 1)
     lat, lon, r = (np.interp(grid, hrs, [p[k] or 0 for p in path]) for k in (1, 2, 3))
     out = {}
     for c in CITIES:
-        d = min_dist(lat, lon, c)
+        by_city = np.array([haversine(lat, lon, a, b) for a, b in CITIES[c]])
+        d = by_city.min(axis=0)
         first = lambda ok: (t[0] + pd.Timedelta(hours=float(grid[ok][0]))).strftime("%Y-%m-%dT%H") if ok.any() else None
-        out[c] = {"center": first(d <= RADIUS_KM), "cone": first(d - r <= RADIUS_KM), "min_km": num(d.min(), 0)}
+        out[c] = {"center": first(d <= RADIUS_KM), "cone": first(d - r <= RADIUS_KM), "min_km": num(d.min(), 0),
+                  "near": CITY_NAMES[c][int(by_city.min(axis=1).argmin())],
+                  "cities": sorted(({"name": n, "t": first(x <= RADIUS_KM)} for n, x in zip(CITY_NAMES[c], by_city)
+                                    if (x <= RADIUS_KM).any()), key=lambda v: v["t"])}
     return out
 
 
@@ -157,7 +127,7 @@ def export_recent(df, models, live=False):
             else:
                 s[c] = {"p": num(last[f"p_{c}"], 3), "hours": num(last[f"h_{c}"], 0),
                         "eta": (last.time + pd.Timedelta(hours=float(last[f"h_{c}"]))).strftime("%Y-%m-%dT%H")}
-                if not pd.isna(last[f"lo_{c}"]):          # 남은 시간 80% 범위(시간)
+                if not pd.isna(last[f"lo_{c}"]):          # 남은 시간 범위(목표 80%, 검증 포함 비율 74~79%)
                     h = last[f"h_{c}"]                    # 표시용: 범위가 점 예측을 늘 감싸게
                     s[c]["range"] = [num(max(min(last[f"lo_{c}"], h), 0), 0), num(max(last[f"hi_{c}"], h), 0)]
         storms.append(s)
@@ -180,9 +150,11 @@ def export_history(df, models):
         full = df[df.SID == sid]
         g = predict_rows(full, models)
         arrival = full[full.in_korea].time.min()
+        japan = full[full.in_japan].time.min()
         g = g[g.time <= arrival + pd.Timedelta(hours=48)]
         out.append({"sid": sid, "name": str(full.NAME.iloc[0]), "season": int(full.SEASON.iloc[0]),
-                    "arrival": arrival.strftime("%Y-%m-%dT%H"), "track": track(g, ["p_korea", "p_japan"])})
+                    "arrival": arrival.strftime("%Y-%m-%dT%H"), "arrival_japan": None if pd.isna(japan) else japan.strftime("%Y-%m-%dT%H"),
+                    "track": track(g, ["p_korea", "p_japan"])})
     out.sort(key=lambda s: s["arrival"], reverse=True)
     return out
 
@@ -201,15 +173,17 @@ def reliability(df, bins=(0, .1, .2, .3, .4, .5, .6, .8, 1.0001), min_n=20):
 
 
 def export_stats(df):
-    hit = df[df.in_korea].groupby("SID").time.min()
-    by_month = hit.dt.month.value_counts().reindex(range(1, 13), fill_value=0)
-    by_year = df[df.SID.isin(hit.index)].groupby("SID").SEASON.first().value_counts().sort_index()
     years = range(int(df.SEASON.min()), int(df.SEASON.max()) + 1)
-    return {"metrics": json.loads((ROOT / "reports" / "metrics.json").read_text()),
-            "analysis": json.loads((ROOT / "reports" / "analysis.json").read_text()),
-            "reliability": reliability(df),
-            "korea_by_month": [int(v) for v in by_month.values],
-            "korea_by_year": {str(y): int(by_year.get(y, 0)) for y in years}}
+    out = {"metrics": json.loads((ROOT / "reports" / "metrics.json").read_text()),
+           "analysis": json.loads((ROOT / "reports" / "analysis.json").read_text()),
+           "reliability": reliability(df)}
+    for c in ["korea", "japan"]:
+        hit = df[df[f"in_{c}"]].groupby("SID").time.min()
+        by_month = hit.dt.month.value_counts().reindex(range(1, 13), fill_value=0)
+        by_year = df[df.SID.isin(hit.index)].groupby("SID").SEASON.first().value_counts()
+        out[f"{c}_by_month"] = [int(v) for v in by_month.values]
+        out[f"{c}_by_year"] = {str(y): int(by_year.get(y, 0)) for y in years}
+    return out
 
 
 def refresh_sources(atmos_timeout=900):
@@ -225,12 +199,7 @@ def refresh_sources(atmos_timeout=900):
         warnings.warn(f"IBTrACS 갱신 실패, 기존 자료 사용: {type(e).__name__}", RuntimeWarning)
     import os
     import signal
-    from .env_atmos import server_last_day, needs_update
-    # NCEP 재분석은 2026-03-17에서 멈췄다. 서버 자료로 새로 채울 시점이 있을 때만 다시 받는다(그 뒤는 env_gfs 가 채움)
-    srv = server_last_day()
-    if not needs_update(srv):
-        print(f"[atmos] NCEP 재분석으로 새로 채울 시점 없음(서버 마지막 {srv.date()}), 받기 생략")
-        return
+    # NCEP 재분석은 2026-03-17에서 멈췄다. 하위 프로세스가 서버를 확인해 새로 채울 시점이 있을 때만 받는다(그 뒤는 env_gfs 가 채움)
     # 하위 프로세스(병렬 받기 작업자 포함)를 한 그룹으로 묶어, 제한시간이 지나면 모두 끝낸다
     proc = subprocess.Popen([sys.executable, "-m", "typhoon.env_atmos", "--recent"], cwd=ROOT,
                             start_new_session=True)
@@ -241,6 +210,16 @@ def refresh_sources(atmos_timeout=900):
         os.killpg(proc.pid, signal.SIGKILL)
         proc.wait()
         warnings.warn("NOAA 재분석 갱신 시간 초과, 기존 특성 사용", RuntimeWarning)
+
+
+def log_forecasts(latest):
+    """기록은 부가 기능이다. 실패해도 이미 만든 사이트 자료는 커밋되어야 한다."""
+    import warnings
+    try:
+        from .forecast_log import append
+        print(f"[forecast_log] 새 기록 {append(latest)}줄")
+    except Exception as e:  # noqa: BLE001
+        warnings.warn(f"예보 기록 실패: {type(e).__name__}: {e}", RuntimeWarning)
 
 
 def main():
@@ -255,14 +234,13 @@ def main():
     df = add_env(add_features(full), gfs=True)
     models = ["korea", "japan"]
     export_models()
-    export_frost()
     latest = export_recent(df, models, live)
+    latest["feed_ok"] = realtime.FEED_OK
     for name, obj in [("latest", latest), ("history", export_history(df, models)), ("stats", export_stats(df))]:
         (OUT / f"{name}.json").write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
     if live:
         # 예보 전문은 7일치만 남으므로 접근 판정을 쌓아 두고 나중에 검증(forecast_log)
-        from .forecast_log import append
-        print(f"[forecast_log] 새 기록 {append(latest)}줄")
+        log_forecasts(latest)
 
 
 if __name__ == "__main__":

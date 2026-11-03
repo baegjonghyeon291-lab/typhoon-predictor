@@ -10,6 +10,8 @@ NCEP 재분석(env_atmos)은 2026-03-17에서 멈췄다. GFS 분석장(f000)은 
 """
 import argparse
 import threading
+import time
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -30,6 +32,10 @@ RES = 0.5
 LAT = np.arange(0, 60 + RES / 2, RES)
 LON = np.arange(100, 180 + RES / 2, RES)
 STEP = int(round(2.5 / RES))               # 2.5° 격자 한 칸 = 0.5° 5칸
+KEYS = ["SID", "time", "LAT", "LON"]
+FEATURES_CACHE = GFS / "features.parquet"  # 계산해 둔 특성. 끝난 태풍은 다시 계산하지 않는다
+TIMEOUT_S = 30                             # 요청 하나의 제한
+BUDGET_S = 480                             # 받기 전체 제한. 서버가 멈춰도 자동 갱신(30분 제한)이 끊기지 않게 받은 날까지만 쓴다
 _ECCODES = threading.Lock()                # eccodes 는 스레드 안전하지 않다(받기만 병렬, 해독은 한 번에 하나)
 
 
@@ -68,7 +74,7 @@ def _decode(msg):
 def _fetch_cycle(sess, day, hour):
     """한 분석 시각의 7개 필드 [필드, y, x]. 아직 없으면 None."""
     url = BASE.format(d=day, h=hour)
-    r = sess.get(url + ".idx", timeout=60)
+    r = sess.get(url + ".idx", timeout=TIMEOUT_S)
     if r.status_code == 404:
         return None
     r.raise_for_status()
@@ -78,7 +84,7 @@ def _fetch_cycle(sess, day, hour):
     out = []
     for key in FIELDS:
         a, b = rng[key]
-        rr = sess.get(url, headers={"Range": f"bytes={a}-{b}"}, timeout=120)
+        rr = sess.get(url, headers={"Range": f"bytes={a}-{b}"}, timeout=TIMEOUT_S)
         rr.raise_for_status()
         out.append(_decode(rr.content))
     return np.stack(out)
@@ -88,22 +94,28 @@ def _path(day):
     return GFS / f"{day:%Y%m%d}.npz"
 
 
-def fetch_day(day, sess=None, retries=3):
+def fetch_day(day, sess=None, retries=3, deadline=None):
     """하루 평균 [필드, y, x]. 4개 분석 시각이 모두 있어야 만들고 캐시한다. 없으면 None."""
     p = _path(day)
     if p.exists():
-        return np.load(p)["f"]
+        try:
+            return np.load(p)["f"]
+        except Exception:  # noqa: BLE001
+            p.unlink(missing_ok=True)      # 깨진 캐시는 지우고 다시 받는다
     if day < FIRST_DAY:
         return None
     sess = sess or requests.Session()
     cyc = []
     for h in CYCLES:
         for k in range(retries):
+            if deadline and time.monotonic() > deadline:
+                return None
             try:
                 c = _fetch_cycle(sess, day, h)
                 break
-            except (requests.RequestException, OSError):
+            except Exception as e:  # noqa: BLE001  접속 오류·잘린 응답·해독 실패: 재시도 후 그날만 건너뜀
                 if k == retries - 1:
+                    warnings.warn(f"[gfs] {day:%Y-%m-%d} {h:02d}시 받기 실패: {type(e).__name__}: {e}", RuntimeWarning)
                     return None
         if c is None:
             return None
@@ -119,8 +131,11 @@ def fetch_day(day, sess=None, retries=3):
 def fetch(days, workers=8):
     """{날짜: 하루 평균} (받지 못한 날은 빠짐)."""
     days = sorted(set(days))
+    deadline = time.monotonic() + BUDGET_S
     with requests.Session() as sess, ThreadPoolExecutor(workers) as ex:
-        got = list(ex.map(lambda d: fetch_day(d, sess), days))
+        got = list(ex.map(lambda d: fetch_day(d, sess, deadline=deadline), days))
+    if time.monotonic() > deadline:
+        warnings.warn(f"[gfs] 받기 제한 {BUDGET_S}초 초과, 받은 날까지만 사용", RuntimeWarning)
     return {d: f for d, f in zip(days, got) if f is not None}
 
 
@@ -153,28 +168,60 @@ def features(pts, workers=8):
     return o
 
 
+def _read_features():
+    try:
+        return pd.read_parquet(FEATURES_CACHE)
+    except Exception:  # noqa: BLE001  없거나 깨졌으면 다시 계산
+        return pd.DataFrame({"SID": pd.Series(dtype=object), "time": pd.Series(dtype="datetime64[ns]"),
+                             "LAT": pd.Series(dtype=float), "LON": pd.Series(dtype=float)})
+
+
 def fill(df, workers=8):
-    """df(add_env 전, atm_* 원값 병합 후)에서 NCEP 재분석이 끝난 뒤의 빈 시점을 GFS로 채운다.
+    """df(add_env 전, atm_* 원값 병합 후)에서 NCEP 재분석이 끝난 뒤의 빈 시점을 GFS로 채우고 env_src 에 출처를 남긴다.
     (재분석 기간 중 영역 밖이라 빈 시점까지 받으러 가지 않도록 재분석 마지막 시점 이후만.)
-    지향류 24시간 변화 계산을 위해 빈 시점이 있는 태풍은 경로 전체를 계산해 빈 칸만 채운다."""
+    지향류 24시간 변화 계산을 위해 태풍 경로 전체를 계산하고, 결과를 캐시해 값이 없는 태풍만 다시 계산한다.
+    위치가 바뀌면(IBTrACS 개정, JMA 점 대체) 캐시를 맞추지 못해 그 태풍을 다시 계산한다."""
     raw = [c for c in df.columns if c.startswith("atm_")]
     empty = df[raw].isna().all(axis=1) if raw else pd.Series(True, index=df.index)
+    df = df.copy()
+    if "env_src" not in df:
+        df["env_src"] = np.where(~empty, "ncep", None)
     ncep_end = df.loc[~empty, "time"].max() if (~empty).any() else FIRST_DAY
     need = empty & (df["time"] > max(ncep_end, FIRST_DAY + pd.Timedelta(days=1)))
     if not need.any():
         return df
-    sids = df.loc[need, "SID"].unique()
-    pts = df[df["SID"].isin(sids)]
-    g = features(pts, workers)
-    df = df.copy()
-    for c in g.columns.drop(["SID", "time"]):
+    key = df.loc[need, KEYS].reset_index()
+    cache = _read_features()
+    cols = [c for c in cache.columns if c not in KEYS]
+    hit = key.merge(cache, on=KEYS, how="left", indicator=True)
+    inside = hit["LAT"].between(0, 60) & (hit["LON"] % 360).between(100, 180)
+    # 캐시에 없는 시점, 또는 값이 비었는데 전날 자료를 아직 못 받은 시점만 다시 계산(자료가 있는데 비면 계산해도 그대로다)
+    blank = hit[cols].isna().all(axis=1) if cols else pd.Series(True, index=hit.index)
+    no_day = (hit["time"].dt.normalize() - pd.Timedelta(days=1)).map(lambda d: not _path(d).exists())
+    miss = inside & ((hit["_merge"] == "left_only") | (blank & no_day))
+    sids = hit.loc[miss, "SID"].unique()
+    if len(sids):
+        g = features(df[df["SID"].isin(sids)], workers)
+        g.insert(2, "LAT", df["LAT"])
+        g.insert(3, "LON", df["LON"])
+        keep = cache[~cache["SID"].isin(sids)]
+        cache = pd.concat([keep, g], ignore_index=True) if len(keep) else g
+        FEATURES_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = FEATURES_CACHE.with_suffix(".tmp.parquet")
+        cache.to_parquet(tmp, index=False)
+        tmp.replace(FEATURES_CACHE)
+        cols = [c for c in cache.columns if c not in KEYS]
+        hit = key.merge(cache, on=KEYS, how="left")
+    m = hit.set_index("index")
+    for c in cols:
         if c not in df:
             df[c] = np.nan
-        df.loc[need, c] = g.loc[need[need].index, c]
-    got = g.loc[need[need].index].drop(columns=["SID", "time"]).notna().any(axis=1)
-    df["env_src"] = np.where(~empty, "ncep", None)
+        df.loc[m.index, c] = m[c]
+    got = m[cols].notna().any(axis=1) if cols else pd.Series(False, index=m.index)
     df.loc[got[got].index, "env_src"] = "gfs"
-    print(f"[gfs] 환경 특성 채움 {int(got.sum())}/{int(need.sum())}개 시점")
+    print(f"[gfs] 환경 특성 채움 {int(got.sum())}/{int(need.sum())}개 시점(새로 계산 태풍 {len(sids)}개)")
+    if not got.any():
+        warnings.warn("[gfs] 채운 시점이 없음. 받기·해독 실패 경고를 확인하세요", RuntimeWarning)
     return df
 
 

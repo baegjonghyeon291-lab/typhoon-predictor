@@ -1,4 +1,5 @@
 """한 시점의 태풍 상태로 학습 특성과 정답(도착 여부·남은 시간) 만들기."""
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -70,15 +71,21 @@ def add_targets(df, country):
 def add_env(df, files=None, gfs=False):
     """data/env/ 의 대기 특성(env_atmos 출력)을 시점별로 붙인다. 없으면 그대로.
     files: 다른 특성 파일(예: ERA5)로 바꿔 붙일 때 파일명 또는 경로 목록.
-    gfs: 재분석이 없는 시점(2026-03-17 이후 등)을 GFS 분석장으로 채운다(네트워크 사용, env_gfs)."""
+    gfs: 재분석이 없는 시점(2026-03-17 이후 등)을 GFS 분석장으로 채우고 env_src 열에 출처를 남긴다(네트워크 사용, env_gfs)."""
     for f in (files or ENV_FILES):
         p = Path(f) if Path(f).is_absolute() else ROOT / "data" / "env" / f
         if p.exists():
             env = pd.read_parquet(p)
             df = df.merge(env.drop_duplicates(["SID", "time"]), on=["SID", "time"], how="left")
     if gfs:
-        from .env_gfs import fill
-        df = fill(df)
+        df = df.copy()
+        raw = [c for c in df.columns if c.startswith("atm_")]
+        df["env_src"] = np.where(df[raw].notna().any(axis=1), "ncep", None) if raw else None
+        try:                                 # GFS 는 보충 자료다. 실패해도 갱신은 재분석·경로 모델로 이어간다
+            from .env_gfs import fill
+            df = fill(df)
+        except Exception as e:  # noqa: BLE001
+            warnings.warn(f"GFS 보충 실패, 있는 자료로 이어감: {type(e).__name__}: {e}", RuntimeWarning)
     if "atm_z500" in df:
         df["atm_dz_ew"] = df.atm_z500_e - df.atm_z500_w
         df["atm_dz_n"] = df.atm_z500_n - df.atm_z500

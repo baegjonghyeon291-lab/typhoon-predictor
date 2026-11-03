@@ -1,5 +1,7 @@
 # typhoon-predictor
 
+> 참고용 머신러닝 예측이며 공식 예보가 아닙니다. 대비는 [기상청 태풍 정보](https://www.weather.go.kr/w/typhoon/report.do)로 판단하세요.
+
 사이트: https://baegjonghyeon291-lab.github.io/typhoon-predictor/
 
 머신러닝 기반 태풍 예측 프로그램. 1951년 이후 서태평양 태풍 경로 전체를 학습해 지금 태풍이 한국(또는 일본)에 언제 올지 예측하고, 한국이 일본보다 태풍 예측이 늦는 이유를 데이터로 분석한다.
@@ -41,7 +43,7 @@
 | 한국 (환경 모델) | 0.912 | 14.5시간 | 28 |
 | 일본 (환경 모델) | 0.909 | 16.1시간 | 91 |
 
-도착 시간은 점 예측과 함께 80% 범위를 낸다. 10%·90% 분위 회귀만으로는 검증에서 실제 도착이 66~69%만 들어와, 학습 기간 안 태풍 단위 교차 예측으로 맞춘 폭(약 3시간)을 양쪽에 더했다(conformalized quantile regression). 검증 포함 비율: 한국 74%(경로)·78%(환경), 일본 79%, 범위 폭 중앙값 한국 약 41시간, 일본 약 49시간.
+도착 시간은 점 예측과 함께 범위를 낸다(목표 80%). 10%·90% 분위 회귀만으로는 검증에서 실제 도착이 66~69%만 들어와, 학습 기간 안 태풍 단위 교차 예측으로 맞춘 폭(약 3시간)을 양쪽에 더했다(conformalized quantile regression). 검증 포함 비율: 한국 74%(경로)·78%(환경), 일본 79%, 범위 폭 중앙값 한국 약 41시간, 일본 약 49시간.
 
 확률은 Platt 보정을 거친다. 학습 자료에 맞춘 트리는 확률을 과신해서(검증에서 한국 '50~70%'가 실제 38%), 학습 기간(~2014) 안에서 태풍 단위 5겹 교차 예측 점수로 보정식을 맞췄다. 분류 트리는 학습을 느리게(학습률 0.02, 800회) 하고 나무를 작게(잎 15개, 잎당 최소 300개) 해서 덜 외우게 했다(`train.CLF_PARAMS`). 검증 Brier 점수(보정 전 기본 설정 → 지금): 한국 환경 모델 0.0357 → 0.0339, 일본 0.0853 → 0.0793 (`reports/metrics.json`).
 
@@ -51,6 +53,8 @@
 |---|---|---|
 | 한국 | 30시간 | 36시간 |
 | 일본 | 60시간 | 66시간 |
+
+모델 설정과 경보 기준을 고를 때도 2015년~ 성능을 봤으므로 위 수치는 조금 낙관적일 수 있다. 2015년~을 보지 않고 학습 ~2004, 비교 2005~2014로 다시 비교해도 지금 설정이 AUC·Brier 모두 가장 좋았고, 경보 기준 40%는 30%·50% 사이의 절충이었다(`reports/tuning_holdout.txt`).
 
 경보 기준 40%는 보정 전 50% 기준과 헛경보 비율이 비슷하다(2015년~ 환경 모델: 경보를 낸 태풍 중 실제로 오지 않은 비율 한국 52개 중 48%, 일본 126개 중 36%). 환경 모델 기준 도착 48시간 전 경보 비율은 한국 39%, 일본 60%.
 
@@ -79,6 +83,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m typhoon.env_gfs --compare  # GFS 분석장 vs NCEP 특성 비교 → reports/gfs_comparison.txt
 .venv/bin/python -m typhoon.train      # 학습 → models/, reports/metrics.json
 .venv/bin/python -m typhoon.analyze    # 분석 → reports/analysis.json
+.venv/bin/python -m typhoon.tune_holdout  # 2015년~을 빼고 모델 설정·경보 기준 재확인 → reports/tuning_holdout.txt
 .venv/bin/python -m typhoon.predict --update   # 최신 데이터 받아 가장 최근 태풍 예측
 .venv/bin/python -m typhoon.predict --sid 2026288N10161
 .venv/bin/python -m typhoon.export --update     # 사이트 데이터 갱신 → docs/data/

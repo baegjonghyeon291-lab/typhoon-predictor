@@ -26,7 +26,7 @@ REG_PARAMS = CLF_PARAMS
 
 
 def arrival_range(tr, features):
-    """남은 시간 80% 범위 모델: 10%·90% 분위 회귀와 폭 보정 delta(시간).
+    """남은 시간 범위 모델(목표 80%, 검증 포함 비율 74~79%): 10%·90% 분위 회귀와 폭 보정 delta(시간).
     분위 모델만으로는 검증에서 66~69%만 들어와(학습 자료 과적합) 학습 기간 안 태풍 단위 5겹 교차 예측의
     범위 밖 거리 80% 분위를 양쪽에 더한다(conformalized quantile regression)."""
     q = lambda a: HistGradientBoostingRegressor(loss="quantile", quantile=a, **REG_PARAMS)  # noqa: E731

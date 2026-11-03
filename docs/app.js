@@ -1,13 +1,20 @@
-const C = { korea: "#ff7a6b", japan: "#63aeff", kmap: "#c8283c", jmap: "#1860c0", muted: "#9bb8cd", text: "#d3e6f3", ink: "#7fc6e0", grid: "rgba(155,200,230,.14)", warn: "#f6b94e", frost: "#3fd2e6" };
+const C = { korea: "#ff7a6b", japan: "#63aeff", kmap: "#c8283c", jmap: "#1860c0", muted: "#9bb8cd", text: "#d3e6f3", ink: "#7fc6e0", grid: "rgba(155,200,230,.14)", warn: "#f6b94e" };
 const KOREA_CITIES = [[37.57, 126.98], [35.18, 129.08], [35.16, 126.85], [33.50, 126.53], [37.75, 128.90], [36.35, 127.38]];
 const CITY_NAMES = ["서울", "부산", "광주", "제주", "강릉", "대전"];
+const JAPAN_CITIES = [[33.59, 130.40], [31.60, 130.56], [34.69, 135.50], [35.68, 139.69], [38.27, 140.87], [43.06, 141.35], [26.21, 127.68], [33.56, 133.53], [37.90, 139.00]];
+const JAPAN_NAMES = ["후쿠오카", "가고시마", "오사카", "도쿄", "센다이", "삿포로", "나하", "고치", "니가타"];
+const KMA_URL = "https://www.weather.go.kr/w/typhoon/report.do", JMA_URL = "https://www.jma.go.jp/bosai/map.html#contents=typhoon";
+const WARN_P = .4;      // 경보 기준(typhoon/analyze.py THRESHOLD)
+const STALE_H = 18;     // 마지막 갱신이 이보다 오래되면 경고. 자동 갱신이 몇 시간씩 늦기도 한다
+const QUIET_H = 48;     // 새 관측이 이만큼 없을 때: 실시간 피드를 정상으로 받았으면 태풍 없음, 아니면 자료를 못 받은 것으로 알린다
 const FEATURE_KO = {
   doy: "날짜(계절)", month: "월", LAT: "위도", LON: "경도", wind: "최대풍속", pres: "중심기압", dwind_24: "하루 풍속 변화",
   dlat_6: "6시간 남북 이동", dlon_6: "6시간 동서 이동", dlat_24: "24시간 남북 이동", dlon_24: "24시간 동서 이동",
   speed_kmh: "이동 속도", heading: "진행 방향", age_h: "발생 후 시간",
   dist_seoul: "서울까지 거리", bearing_seoul: "서울 방위", dist_tokyo: "도쿄까지 거리", bearing_tokyo: "도쿄 방위",
-  atm_u_steer: "동서 지향류", atm_v_steer: "남북 지향류", atm_u_steer_24: "하루 동서 지향류 변화", atm_v_steer_24: "하루 남북 지향류 변화",
-  atm_shear: "연직 바람 시어", atm_z500: "500hPa 고도", atm_z500_n: "북쪽 500hPa 고도", atm_z500_e: "동쪽 500hPa 고도",
+  atm_u_steer: "태풍을 미는 동서 바람", atm_v_steer: "태풍을 미는 남북 바람", atm_u_steer_24: "미는 동서 바람의 하루 변화", atm_v_steer_24: "미는 남북 바람의 하루 변화",
+  atm_dz_ew: "동서 기압 경도", atm_dz_n: "남북 기압 경도", atm_dz_max: "고기압까지의 고도 차", atm_ridge_dlon: "고기압 서쪽 끝까지 경도 차", atm_ridge_dlat: "고기압 축까지 위도 차",
+  atm_shear: "높이별 바람 차이", atm_z500: "500hPa 고도", atm_z500_n: "북쪽 500hPa 고도", atm_z500_e: "동쪽 500hPa 고도",
   atm_z500_w: "서쪽 500hPa 고도", atm_ridge_west: "북태평양 고기압 서쪽 끝", atm_ridge_lat: "고기압 축 위도", atm_z500_max: "고기압 세기",
   ocn_sst: "해수면 온도", ocn_sst_anom: "해수온 편차", ocn_sst_ahead: "북쪽 해수온", ocn_sst_ahead_diff: "북쪽 해수온 차이",
   ocn_oni: "엘니뇨 지수", ocn_pdo: "태평양 10년 진동", ocn_nino4: "니뇨4 편차",
@@ -31,7 +38,22 @@ function kst(t, withYear = false) {
   return withYear ? `${d.getUTCFullYear()}년 ${s}` : s;
 }
 const pct = p => `${Math.round(p * 100)}%`;
+const pctCard = p => p < .01 ? "1% 미만" : pct(p);
 const has = v => v != null && !Number.isNaN(v);
+const hrsFromNow = t => (utc(t).getTime() - Date.now()) / 36e5;
+const addHours = (t, h) => new Date(utc(t).getTime() + h * 36e5).toISOString().slice(0, 13);
+const agoText = h => h < 1 ? "방금" : h < 48 ? `${Math.round(h)}시간 전` : `${Math.round(h / 24)}일 전`;
+const leftText = t => { const h = hrsFromNow(t); return h <= 0 ? "예상 시각이 지났어요" : h < 1 ? "1시간 안" : `지금부터 약 ${Math.round(h)}시간`; };
+const earlyText = t => hrsFromNow(t) > 0 ? `빠르면 ${kst(t)}` : "이미 올 수 있는 시간대";
+const kn2ms = kt => Math.round(kt * .5144);
+const todayKST = () => new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10);
+// 기상청 한글 표기(사이트에 나오는 이름만). 없는 이름은 영문 그대로
+const KO_NAME = { CHABA: "차바", "CHAN-HOM": "찬홈", CHANTHU: "찬투", DANAS: "다나스", FRANCISCO: "프란시스코", GONI: "고니", HAGUPIT: "하구핏", HAISHEN: "하이선", HINNAMNOR: "힌남노", JANGMI: "장미", JONGDARI: "종다리", KHANUN: "카눈", "KONG-REY": "콩레이", LEEPI: "리피", LINGLING: "링링", MAYSAK: "마이삭", MERANTI: "므란티", MITAG: "미탁", NAMTHEUN: "남테운", OMAIS: "오마이스", PRAPIROON: "쁘라삐룬", PULASAN: "풀라산", SOUDELOR: "사우델로르", SOULIK: "솔릭", TAPAH: "타파", TRASES: "뜨라세", CHAMPI: "참피", "IN-FA": "인파", KOGUMA: "고구마" };
+const stormName = s => s.name === "UNNAMED" || s.name === "NOT_NAMED" ? "이름 없음" : KO_NAME[s.name] || s.name;
+const stormFull = s => KO_NAME[s.name] ? `${KO_NAME[s.name]}(${s.name})` : stormName(s);
+const debounce = (fn, ms = 200) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const tableHtml = (head, rows) => `<table><thead><tr>${head.map(h => `<th scope="col">${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+const describeChart = (canvas, text) => { canvas.setAttribute("role", "img"); canvas.setAttribute("aria-label", text); };
 const setBar = (el, p) => { if (el) el.style.transform = `scaleX(${Math.max(0, Math.min(1, p))})`; };
 
 /* 화면에 들어왔을 때 한 번 실행 */
@@ -44,14 +66,22 @@ function seen(el, fn, th = .15) {
   io.observe(el);
 }
 
-/* 강도 체계 (풍속 kt 기준, 없으면 JMA 등급) */
+/* 화면 가까이 왔을 때 한 번 실행(무거운 자료를 처음부터 받지 않도록) */
+function near(el, fn) {
+  if (!el) return;
+  if (!("IntersectionObserver" in window)) { fn(); return; }
+  const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); fn(); } }, { rootMargin: "800px 0px" });
+  io.observe(el);
+}
+
+/* 강도 체계 (풍속 kt 기준, 없으면 JMA 등급). 33·44·54m/s(약 64·85·105kt)는 기상청 강·매우강·초강력 경계 */
 const LV = [
   { name: "열대저압부", color: "#6b8299", ink: "#a9c0d4" },
   { name: "열대폭풍", color: "#2aa7d8", ink: "#6fd3f5" },
   { name: "강한 열대폭풍", color: "#f08a1c", ink: "#ffb35c" },
-  { name: "태풍", color: "#e5383b", ink: "#ff8a8d" },
-  { name: "강한 태풍", color: "#a4161a", ink: "#ff9a9e" },
-  { name: "매우 강한 태풍", color: "#7b2cbf", ink: "#d3a6f7" },
+  { name: "강한 태풍", color: "#e5383b", ink: "#ff8a8d" },
+  { name: "매우 강한 태풍", color: "#a4161a", ink: "#ff9a9e" },
+  { name: "초강력 태풍", color: "#7b2cbf", ink: "#d3a6f7" },
 ];
 function lvIndex(kt, grade) {
   if (kt != null) return kt < 34 ? 0 : kt < 48 ? 1 : kt < 64 ? 2 : kt < 85 ? 3 : kt < 105 ? 4 : 5;
@@ -77,31 +107,69 @@ function ensurePanes(map) {
   map._tcPanes = true;
 }
 
-// 지도마다 범례 하나(오른쪽 아래), 확대 버튼은 오른쪽 위
-function baseMap(id, center = [30, 130], zoom = 4) {
+// 지도마다 범례 하나(오른쪽 아래, 좁은 화면은 접힘), 확대 버튼은 오른쪽 위
+function baseMap(id, center = [30, 130], zoom = 4, { forecast = false } = {}) {
+  const legendOpen = forecast && window.innerWidth > 860;      // 지난 태풍·직접 예측 지도는 접어 두어 경로를 가리지 않게
   const map = L.map(id, { zoomControl: false, scrollWheelZoom: false, worldCopyJump: true, dragging: !L.Browser.mobile }).setView(center, zoom);
   L.control.zoom({ position: "topright" }).addTo(map);
   const base = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/";
   L.tileLayer(base + "World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", { attribution: "&copy; Esri", maxZoom: 10 }).addTo(map);
-  L.tileLayer(base + "World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}", { maxZoom: 10 }).addTo(map);
   ensurePanes(map);
   const lg = L.control({ position: "bottomright" });
   lg.onAdd = () => {
-    const d = L.DomUtil.create("div", "tc-legend");
-    d.innerHTML = LV.map(l => `<div><i style="background:${l.color}"></i>${l.name}</div>`).join("");
+    const d = L.DomUtil.create("details", "tc-legend");
+    d.open = legendOpen;
+    d.innerHTML = `<summary>범례</summary>` + LV.map(l => `<div><i style="background:${l.color}"></i>${l.name}</div>`).join("")
+      + (forecast ? `<div class="sep"><i class="lg-line"></i>예보 경로(+24h는 24시간 뒤)</div><div><i class="lg-cone"></i>예보 오차 범위(70%)</div>` : "")
+      + `<div${forecast ? "" : ' class="sep"'}><i class="lg-zone"></i>영향권(도시 200km)</div>`;
     L.DomEvent.disableClickPropagation(d);
     return d;
   };
   lg.addTo(map);
+  map.on("zoomend moveend", debounce(() => declutter(map), 120));
   return map;
 }
 
-// 한국 6개 도시 영향권(200km)
-function drawCities(map) {
-  KOREA_CITIES.forEach((c, i) => {
-    L.circle(c, { radius: 200000, color: C.kmap, weight: 1, opacity: .45, dashArray: "3 6", fillColor: C.kmap, fillOpacity: .025, interactive: false }).addTo(map);
-    L.marker(c, { interactive: false, keyboard: false, icon: L.divIcon({ className: "tc-city", iconSize: [0, 0], html: `<i></i><span>${CITY_NAMES[i]}</span>` }) }).addTo(map);
+// 라벨이 겹치면 덜 중요한 쪽을 숨긴다. 태풍 이름표는 항상 보이게 아래로 비키고,
+// 그다음 고른 태풍의 시각 > 주요 도시 > 나머지 도시 > 예보 시각 > 날짜 > 소멸 태풍 순서
+const LABEL_ORDER = [".tc-fc.hot span", ".tc-date.hot span", ".tc-city.pri span", ".tc-city span", ".tc-fc span", ".tc-date span", ".tc-end .tc-label"];
+function declutter(map) {
+  const el = map.getContainer();
+  const box = r => r.width && r.height;
+  const hits = (r, p) => r.left < p.right && r.right > p.left && r.top < p.bottom && r.bottom > p.top;
+  const down = (r, dy) => ({ left: r.left, right: r.right, top: r.top + dy, bottom: r.bottom + dy });
+  const faded = e => el.classList.contains("focus") && e.closest(".tc-p") && !e.closest(".hot");     // 흐려진 태풍은 자리를 차지하지 않음
+  const placed = [];
+  el.querySelectorAll(".tc-box .tc-label").forEach(e => {
+    e.style.marginTop = "";
+    const r = e.getBoundingClientRect();
+    if (!box(r) || faded(e)) return;
+    let dy = 0;
+    while (dy < 120 && placed.some(p => hits(down(r, dy), p))) dy += r.height + 2;
+    if (dy) e.style.marginTop = `${dy}px`;
+    placed.push(down(r, dy));
   });
+  const done = new Set();
+  LABEL_ORDER.forEach(sel => el.querySelectorAll(sel).forEach(e => {
+    if (done.has(e)) return;
+    done.add(e);
+    e.style.visibility = "";
+    const r = e.getBoundingClientRect();
+    if (!box(r) || faded(e)) return;
+    if (placed.some(p => hits(r, p))) e.style.visibility = "hidden";
+    else placed.push(r);
+  }));
+}
+
+// 한국 6개·일본 9개 도시 영향권(200km)
+function drawCities(map) {
+  const pri = new Set(["서울", "부산", "제주", "도쿄", "오사카", "후쿠오카", "나하", "삿포로"]);
+  const draw = (cities, names, color, cls) => cities.forEach((c, i) => {
+    L.circle(c, { radius: 200000, color, weight: 1, opacity: .45, dashArray: "3 6", fillColor: color, fillOpacity: .025, interactive: false }).addTo(map);
+    L.marker(c, { interactive: false, keyboard: false, icon: L.divIcon({ className: `tc-city ${cls}${pri.has(names[i]) ? " pri" : ""}`, iconSize: [0, 0], html: `<i></i><span>${names[i]}</span>` }) }).addTo(map);
+  });
+  draw(JAPAN_CITIES, JAPAN_NAMES, C.jmap, "jp");
+  draw(KOREA_CITIES, CITY_NAMES, C.kmap, "kr");
 }
 
 // 태풍 아이콘: 구름띠 4+4가닥 + 고정된 눈
@@ -122,7 +190,7 @@ const iconSize = idx => 32 + idx * 4;
 const chipLabel = (name, kt, hpa) => `${name}${kt != null || hpa != null ? `<small>${[kt != null ? kt + "kt" : "", hpa != null ? hpa + "hPa" : ""].filter(Boolean).join(" · ")}</small>` : ""}`;
 
 // 경로: 강도 색, 흰 외곽선, 6시간 점, 00UTC 큰 점 + 날짜. 반환 { segs } 로 투명도 제어 가능
-function drawTrack(layer, track, { grade = null, animate = true, weight = 3.5, cls = "", dates = true, opacityOf = null } = {}) {
+function drawTrack(layer, track, { grade = null, animate = true, weight = 3.5, cls = "", dates = true, opacityOf = null, done = null } = {}) {
   const w = fillWind(track), segs = [];
   const col = i => LV[lvIndex(w[i], grade)].color;
   const items = [];
@@ -147,11 +215,15 @@ function drawTrack(layer, track, { grade = null, animate = true, weight = 3.5, c
   }
   const restyle = () => segs.forEach((sg, k) => sg.setStyle({ opacity: opacityOf ? opacityOf(k) : .95 }));
   let dead = false;
-  if (!animate || REDUCED) items.forEach(f => f());
+  if (!animate || REDUCED) { items.forEach(f => f()); done && done(); }
   else {
     // 앞부분은 빠르게, 뒤로 갈수록 천천히
     let n = 0;
-    const step = () => { if (!dead && n < items.length) { items[n++](); setTimeout(step, 6 + 30 * (n / items.length)); } };
+    const step = () => {
+      if (dead) return;
+      if (n < items.length) { items[n++](); setTimeout(step, 6 + 30 * (n / items.length)); }
+      else if (done) done();
+    };
     step();
   }
   return { restyle, cancel: () => { dead = true; } };
@@ -238,6 +310,10 @@ const endLabels = {
     });
     items.sort((u, v) => u.y - v.y);
     for (let i = 1; i < items.length; i++) if (items[i].ly - items[i - 1].ly < 16) items[i].ly = items[i - 1].ly + 16;
+    if (items.length && items[items.length - 1].ly > a.bottom) {      // 아래로 넘치면 위로 밀어 올림
+      items[items.length - 1].ly = a.bottom;
+      for (let i = items.length - 2; i >= 0; i--) if (items[i + 1].ly - items[i].ly < 16) items[i].ly = items[i + 1].ly - 16;
+    }
     ctx.save(); ctx.globalAlpha = alpha; ctx.textBaseline = "middle";
     ctx.font = `700 12.5px ${Chart.defaults.font.family}`;
     items.forEach(it => {
@@ -251,138 +327,301 @@ const endLabels = {
 
 /* ---------- 현재 태풍 ---------- */
 function renderNow(latest) {
-  $("asof").textContent = `${kst(latest.data_until, true)} 기준`;
-  const map = baseMap("nowMap", [27, 134], 4);
+  const map = baseMap("nowMap", [27, 134], 4, { forecast: true });
   const mapEl = $("nowMap");
   drawCities(map);
   const list = $("nowList"), goneList = $("goneList");
-  const bounds = [];
+  list.innerHTML = "";
+  const liveBounds = [];
   const wide = () => window.innerWidth > 860;
-  const pad = () => ({ paddingTopLeft: [wide() ? 372 : 24, 40], paddingBottomRight: [24, 40], maxZoom: 5 });
-  const focus = n => {
+  const pad = () => ({ paddingTopLeft: [wide() ? 420 : 64, 44], paddingBottomRight: [wide() ? 120 : 64, 44], maxZoom: 5 });
+  const ENV_SRC = { gfs: "어제 상공 바람 자료 반영(NOAA GFS)", ncep: "어제 상공 바람 자료 반영(NOAA 재분석)" };
+  const cards = [];
+  let selected = null, view = null, allView = null;
+
+  const highlight = n => {
     mapEl.classList.toggle("focus", n != null);
     mapEl.querySelectorAll(".tc-p").forEach(e => e.classList.toggle("hot", n != null && e.classList.contains("tc-s" + n)));
   };
-  const name = s => s.name === "UNNAMED" ? "이름 없음" : s.name;
-  const ENV_SRC = { gfs: "상공 바람·고기압 반영 (NOAA GFS 분석장, 전날 평균)", ncep: "상공 바람·고기압 반영 (NOAA 재분석, 전날 평균)" };
-  const bind = (el, n, s) => {
-    const fly = () => map.flyToBounds(s.track.map(t => [t[1], t[2]]), { ...pad(), duration: 1.1 });
-    el.addEventListener("click", fly);
-    el.addEventListener("keydown", e => { if (e.key === "Enter") fly(); });
-    ["mouseenter", "focus"].forEach(ev => el.addEventListener(ev, () => focus(n)));
-    ["mouseleave", "blur"].forEach(ev => el.addEventListener(ev, () => focus(null)));
+  const fit = (b, o = {}) => {
+    view = b;
+    if (REDUCED) map.fitBounds(b, pad());
+    else map.flyToBounds(b, { ...pad(), duration: 1.1, ...o });
   };
+  const stormBounds = (s, live) => {
+    const pts = s.track.map(t => [t[1], t[2]]);
+    if (!live) return L.latLngBounds(pts);
+    return L.latLngBounds([...pts, ...(s.forecast?.points || []).map(p => [p[1], p[2]]), ...KOREA_CITIES, ...JAPAN_CITIES]);
+  };
+  const scrollToEl = (e, off = 44) => window.scrollTo({ top: e.getBoundingClientRect().top + scrollY - off, behavior: REDUCED ? "auto" : "smooth" });
+  const toMap = () => { if (!wide()) scrollToEl(mapEl); };
+  $("toMap").addEventListener("click", toMap);
+  const markCards = () => cards.forEach((c, i) => { c.classList.toggle("sel", i === selected); c.setAttribute("aria-pressed", i === selected); });
+  const select = (n, s, live, scroll = true) => {
+    selected = n;
+    highlight(n);
+    markCards();
+    fit(stormBounds(s, live));
+    if (scroll) toMap();
+  };
+  const reset = () => {
+    selected = null;
+    highlight(null);
+    markCards();
+    if (allView) fit(allView);
+    else { view = null; map.flyTo([27, 134], 4); }
+  };
+  map.on("click", () => { if (selected != null) reset(); });
+  map.on("resize", debounce(() => { if (view) map.fitBounds(view, pad()); }, 250));
+  const allBtn = L.control({ position: "topright" });
+  allBtn.onAdd = () => {
+    const d = L.DomUtil.create("div", "map-btns");
+    d.innerHTML = `<button type="button" class="map-all">전체 보기</button><button type="button" class="map-all back">목록 보기</button>`;
+    L.DomEvent.disableClickPropagation(d);
+    L.DomEvent.on(d.firstChild, "click", reset);
+    L.DomEvent.on(d.lastChild, "click", () => scrollToEl(selected != null ? cards[selected] : $("nowPanel")));
+    return d;
+  };
+  allBtn.addTo(map);
+  const bind = (el, n, s, live) => {
+    cards[n] = el;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-pressed", "false");
+    el.addEventListener("click", () => select(n, s, live));
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(n, s, live); } });
+    ["mouseenter", "focus"].forEach(ev => el.addEventListener(ev, () => highlight(n)));
+    ["mouseleave", "blur"].forEach(ev => el.addEventListener(ev, () => highlight(selected)));
+  };
+
+  // 카드의 나라별 줄
+  const whenLines = (v, s) => {
+    if (!v.range) return `<div class="eta"><span class="who">우리 예측(온다면)</span> ${kst(v.eta)}쯤 · <span data-left="${v.eta}"></span></div>`;
+    // eta 는 시 단위로 버리고 range 는 반올림이라 1시간 어긋날 수 있어 eta 를 감싸게 맞춘다
+    const lo = [addHours(s.end, v.range[0]), v.eta].sort()[0], hi = [addHours(s.end, v.range[1]), v.eta].sort()[1];
+    return `<div class="eta"><span class="who">우리 예측(온다면)</span> <b data-early="${lo}"></b>, 늦으면 ${kst(hi)}</div>`
+      + `<div class="eta">가장 가능성 높은 때 ${kst(v.eta)} · <span data-left="${v.eta}"></span></div>`;
+  };
+  // 일본 기상청 5일 예보 진로가 영향권(도시 200km)에 들어오는지: 중심 진입 > 오차 범위 닿음 > 최단 거리
+  const fcLine = (a, v) => {
+    if (!a) return "";
+    const city = a.near || "가장 가까운 도시", km = a.min_km != null ? `약 ${a.min_km.toLocaleString()}km` : "";
+    const cities = (a.cities || []).slice(0, 4).map(x => `${x.name} ${kst(x.t)}`).join(", ");
+    const txt = a.center ? `<b>${kst(a.center)}쯤</b> 중심이 영향권에 들어옴(${city} ${km}까지 접근)${cities ? `<span class="cities">도시별 진입: ${cities}</span>` : ""}`
+      : a.cone ? `중심은 ${city} ${km}까지만 접근. 예보 오차를 감안하면 ${kst(a.cone)}부터 영향권에 들 수 있음`
+      : `가장 가까울 때도 ${city}에서 ${km}, 5일 안에는 영향권 밖`;
+    const differs = (v.p >= .2 && !a.center && !a.cone) || (v.p < .2 && a.center);
+    return `<div class="eta fcx"><span class="who">일본 기상청 예보 진로</span> ${txt}${differs ? `<em class="differ">두 예측이 달라요. 공식 예보를 확인하세요.</em>` : ""}</div>`;
+  };
+  const rowHtml = (s, c, label) => {
+    const v = s[c];
+    if (v.arrived) return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="1"></u></i><b>도달</b></div><div class="eta">${kst(v.arrived)} 영향권 진입</div>`;
+    return `<div class="pr ${c}${v.p < .2 ? " low" : ""}"><span class="pl">${label}</span><i class="bar"><u data-p="${v.p}"></u></i><b>${pctCard(v.p)}</b></div>`
+      + (v.p >= .2 ? whenLines(v, s) : "") + fcLine(s.forecast?.approach?.[c], v);
+  };
+
+  // data_until 은 마지막 관측 시각이라 태풍이 없으면 멈춰 있다. 신선도는 갱신 시각(generated)으로 따진다
+  const generatedAt = new Date(`${latest.generated}:00Z`).getTime();
+  const longGap = (generatedAt - utc(latest.data_until).getTime()) / 36e5 >= QUIET_H;
+  const quiet = longGap && latest.feed_ok === true, noFeed = longGap && !quiet;
   let liveN = 0, goneN = 0;
+  const goneDraws = [], goneIdx = new Set();
+  const liveStorms = [];
   latest.storms.forEach((s, n) => {
-    const live = s.end === latest.data_until;
-    const cls = `tc-p tc-s${n}`;
-    const layer = L.layerGroup().addTo(map);
+    const live = s.end === latest.data_until && !quiet;
+    const cls = `tc-p tc-s${n}${live ? "" : " tc-gone"}`;
+    const layer = L.layerGroup();
     const last = s.track[s.track.length - 1];
     const w = fillWind(s.track);
     const kt = last[3] ?? null, hpa = last[4] ?? null;
     const idx = lvIndex(kt ?? (live ? w[w.length - 1] : null), s.grade);
-    drawTrack(layer, s.track, { grade: s.grade, cls, dates: live });
     const li = document.createElement("li");
     li.tabIndex = 0;
     if (live) {
-      bounds.push(...s.track.map(t => [t[1], t[2]]));
-      L.marker([last[1], last[2]], { icon: tcIcon({ size: iconSize(idx), idx, live: true, label: chipLabel(name(s), kt, hpa), cls }), keyboard: false, zIndexOffset: 1000 }).addTo(layer);
+      layer.addTo(map);
+      drawTrack(layer, s.track, { grade: s.grade, cls, dates: true, done: () => declutter(map) });
+      liveStorms.push(s);
+      liveBounds.push(...s.track.map(t => [t[1], t[2]]));
+      L.marker([last[1], last[2]], { title: `${stormName(s)} 현재 위치`, alt: `${stormName(s)} 현재 위치`, icon: tcIcon({ size: iconSize(idx), idx, live: true, label: chipLabel(stormName(s), kt, hpa), cls }), zIndexOffset: 1000 })
+        .on("click", () => { select(n, s, true, false); li.scrollIntoView({ block: "nearest" }); })
+        .addTo(layer);
       const color = s.korea.p >= .2 || s.korea.arrived ? C.kmap : C.jmap;
-      const f = drawForecast(map, layer, s, last, color, cls);
-      bounds.push(...f.points);
-
-      const row = (c, label) => {
-        const v = s[c];
-        if (v.arrived) return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="1"></u></i><b>도달</b></div><div class="eta">${kst(v.arrived)}</div>`;
-        return `<div class="pr ${c}"><span class="pl">${label}</span><i class="bar"><u data-p="${v.p}"></u></i><b>${pct(v.p)}</b></div>`
-          + (v.p >= .2 ? `<div class="eta">약 ${Math.max(0, v.hours)}시간 뒤${v.range ? ` (${v.range[0]}~${v.range[1]}시간)` : ""} · ${kst(v.eta)} 도착 예상</div>` : "")
-          + fcLine(s.forecast?.approach?.[c]);
-      };
-      // 일본 기상청 5일 예보 진로가 영향권(도시 200km)에 들어오는지: 중심 진입 > 70% 확률 원 닿음 > 최단 거리
-      const fcLine = a => !a ? "" : `<div class="eta fcx">일본 기상청 예보: ${a.center ? `<b>${kst(a.center)}</b> 영향권 진입`
-        : a.cone ? `중심은 최단 ${a.min_km}km, 70% 확률 원은 ${kst(a.cone)}부터 영향권에 닿음` : `최단 ${a.min_km}km, 5일 안 영향권 밖`}</div>`;
+      liveBounds.push(...drawForecast(map, layer, s, last, color, cls).points);
       const L1 = LV[idx];
       li.style.animationDelay = `${liveN * 90}ms`;
-      li.innerHTML = `<div class="s-head"><b>${name(s)}</b>${kt != null || s.grade != null ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${lvName(kt, s.grade)}</span>` : ""}</div>`
-        + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
-        + row("korea", "한국") + row("japan", "일본")
-        + `<div class="src">${ENV_SRC[s.env] || "경로만으로 예측(상공 자료 없음)"}</div>`;
+      li.innerHTML = `<div class="s-head"><b>${stormFull(s)}</b>${kt != null || s.grade != null ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${lvName(kt, s.grade)}</span>` : ""}</div>`
+        + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt(${kn2ms(kt)}m/s)` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
+        + rowHtml(s, "korea", "한국") + rowHtml(s, "japan", "일본")
+        + `<div class="src${ENV_SRC[s.env] ? "" : " weak"}">${ENV_SRC[s.env] || "상공 자료 없이 경로만으로 계산해 정확도가 낮을 수 있어요"}</div><div class="to-map">지도에서 보기</div>`;
       list.appendChild(li); liveN++;
     } else {
-      L.marker([last[1], last[2]], { interactive: false, keyboard: false, icon: L.divIcon({ className: `tc-icon ${cls}`, iconSize: [18, 18], iconAnchor: [9, 9], html: `<div class="tc-end" style="color:${LV[idx].color}"><i></i><div class="tc-label">${name(s)}</div></div>` }) }).addTo(layer);
+      // 소멸한 태풍은 '최근 소멸'을 펼쳤을 때만 지도에 그린다(활동 중인 것처럼 보이지 않게)
+      goneDraws.push(() => {
+        layer.addTo(map);
+        drawTrack(layer, s.track, { grade: s.grade, cls, dates: false, animate: false });
+        L.marker([last[1], last[2]], { interactive: false, keyboard: false, icon: L.divIcon({ className: `tc-icon ${cls}`, iconSize: [18, 18], iconAnchor: [9, 9], html: `<div class="tc-end" style="color:${LV[idx].color}"><i></i><div class="tc-label">${stormName(s)}</div></div>` }) }).addTo(layer);
+        return layer;
+      });
       const hit = [s.korea.arrived ? `한국 ${kst(s.korea.arrived)} 도달` : "", s.japan.arrived ? `일본 ${kst(s.japan.arrived)} 도달` : ""].filter(Boolean).join(" · ");
-      li.innerHTML = `<b>${name(s)}</b><span>${kst(s.start)} – ${kst(s.end)}</span>${hit ? `<em>${hit}</em>` : ""}`;
+      li.innerHTML = `<b>${stormFull(s)}</b><span>${kst(s.start)} – ${kst(s.end)}</span>${hit ? `<em>${hit}</em>` : ""}`;
       goneList.appendChild(li); goneN++;
+      goneIdx.add(n);
     }
-    bind(li, n, s);
+    bind(li, n, s, live);
   });
   if (!liveN) list.innerHTML = `<li class="empty" style="cursor:default;animation:none">활동 중인 태풍 없음</li>`;
-  if (goneN) { $("goneBox").hidden = false; $("goneN").textContent = `(${goneN})`; }
+  if (goneN) {
+    let goneLayers = null;
+    $("goneBox").hidden = false;
+    $("goneN").textContent = `(${goneN})`;
+    $("goneBox").addEventListener("toggle", e => {
+      if (e.target.open) { if (goneLayers) goneLayers.forEach(l => l.addTo(map)); else goneLayers = goneDraws.map(f => f()); }
+      else { (goneLayers || []).forEach(l => l.remove()); if (selected != null && goneIdx.has(selected)) reset(); }
+      declutter(map);
+    });
+  }
+
+  // 맨 위 한 줄 답: 나라별로 가장 위험한 태풍 기준
+  const inNow = (s, c) => { const t = s.track[s.track.length - 1]; return inZone([t[1], t[2]], c === "korea" ? KOREA_CITIES : JAPAN_CITIES); };
+  // 영향권을 벗어난 태풍이 다가오는 다른 태풍을 가리지 않게, 도달한 태풍은 지금 영향권 안일 때만 최우선
+  const score = (s, c) => { const a = s.forecast?.approach?.[c]; return s[c].arrived ? (inNow(s, c) ? 2 : 0) : Math.max(s[c].p, a?.center ? .6 : a?.cone ? .3 : 0); };
+  const earliest = (s, c) => {
+    const v = s[c], a = s.forecast?.approach?.[c], ts = [];
+    if (v.range && v.p >= .2) ts.push(addHours(s.end, v.range[0]));
+    if (a?.center) ts.push(a.center);
+    ts.sort();
+    return ts.length && hrsFromNow(ts[0]) > 0 ? ts[0] : null;
+  };
+  const official = { korea: `<a href="${KMA_URL}" target="_blank" rel="noopener">기상청 특보 확인</a>`, japan: `<a href="${JMA_URL}" target="_blank" rel="noopener">일본 기상청 확인</a>` };
+  const verdictHtml = (stale, basis) => !liveStorms.length ? "" : [["korea", "한국"], ["japan", "일본"]].map(([c, label]) => {
+    const top = liveStorms.reduce((a, b) => (score(b, c) > score(a, c) ? b : a));
+    const sc = score(top, c), when = earliest(top, c);
+    const others = liveStorms.filter(x => x !== top && score(x, c) >= .2).length;
+    const [lvl, txt] = top[c].arrived && sc === 2 ? ["hi", `${stormName(top)} 영향권에 있어요`]
+      : sc >= WARN_P ? ["hi", `${stormName(top)} 올 가능성이 있어요`]
+      : sc >= .2 ? ["mid", `${stormName(top)} 주시가 필요해요`]
+      : stale ? ["mid", "지금 상황은 공식 정보로 확인하세요"]
+      : top[c].arrived ? ["low", `${stormName(top)} 영향권을 벗어났어요`] : ["low", "지금은 올 가능성이 낮아요"];
+    const notes = [stale ? basis : "", when && !stale && lvl !== "low" ? `빠르면 ${kst(when)}` : "", others ? `다른 태풍 ${others}개도 아래에서 확인하세요` : ""].filter(Boolean);
+    return `<div class="vd ${lvl}"><span class="k ${c}">${label}</span><p>${txt}${notes.map(n => `<small>${n}</small>`).join("")}${lvl !== "low" ? official[c] : ""}</p></div>`;
+  }).join("");
+
+  // 남은 시간과 자료 나이는 지금 시각 기준으로 계속 다시 계산한다
+  let lastVerdict = null, lastNote = null;
+  const tick = () => {
+    const age = (Date.now() - generatedAt) / 36e5, stale = age >= STALE_H || noFeed, note = $("staleNote");
+    const obs = agoText(-hrsFromNow(latest.data_until)), link = `<a href="${KMA_URL}" target="_blank" rel="noopener">기상청 태풍 정보</a>`;
+    const noteHtml = !stale ? "" : age >= STALE_H ? `마지막 갱신이 ${agoText(age)}이에요. 갱신이 늦어져 지금 상황과 다를 수 있어요. ${link}`
+      : `실시간 자료를 받지 못해 ${obs} 관측이 마지막이에요. 지금 상황과 다를 수 있어요. ${link}`;
+    if (noteHtml !== lastNote) note.innerHTML = lastNote = noteHtml;       // 내용이 그대로면 초점과 낭독을 흔들지 않는다
+    $("asof").textContent = `${kst(latest.data_until)} 자료 · ${agoText(age)} 갱신`;
+    $("nowPanel").classList.toggle("stale", stale);
+    const vh = verdictHtml(stale, age >= STALE_H ? `${agoText(age)} 갱신한 자료 기준` : `${obs} 관측 기준`);
+    if (vh !== lastVerdict) $("verdict").innerHTML = lastVerdict = vh;      // 내용이 그대로면 링크 초점을 흔들지 않는다
+    note.hidden = !stale;
+    list.querySelectorAll("[data-left]").forEach(e => { e.textContent = leftText(e.dataset.left); });
+    list.querySelectorAll("[data-early]").forEach(e => { e.textContent = earlyText(e.dataset.early); });
+  };
+  tick();
+  setInterval(tick, 6e4);
 
   // 첫 로드: 넓게 보다가 활동 중인 태풍 쪽으로 한 번 부드럽게 이동
-  if (bounds.length) {
-    const target = L.latLngBounds([...bounds, ...KOREA_CITIES]);
-    if (REDUCED) map.fitBounds(target, pad());
-    else setTimeout(() => map.flyToBounds(target, { ...pad(), duration: 2.4, easeLinearity: .2 }), 700);
+  if (liveBounds.length) {
+    allView = L.latLngBounds([...liveBounds, ...KOREA_CITIES]);
+    view = allView;
+    if (REDUCED) map.fitBounds(allView, pad());
+    else setTimeout(() => map.flyToBounds(allView, { ...pad(), duration: 2.4, easeLinearity: .2 }), 700);
   }
   setTimeout(() => list.querySelectorAll(".bar u").forEach(u => setBar(u, +u.dataset.p)), 500);
+  setTimeout(() => declutter(map), 1500);
 }
 
 /* ---------- 직접 예측 ---------- */
+const inZone = (p, cities) => cities.some(c => haversine(p[0], p[1], c[0], c[1]) <= 200);
 function renderSim(model) {
   const map = baseMap("simMap", [28, 130], 4);
   drawCities(map);
   const form = $("simForm");
-  form.date.value = new Date().toISOString().slice(0, 10);
+  form.date.value = todayKST();
   let pos = [24, 128];
-  const marker = L.marker(pos, { icon: tcIcon({ size: 44, idx: 3, live: false }), draggable: true, zIndexOffset: 1000 }).addTo(map);
+  const marker = L.marker(pos, { title: "가상 태풍 위치", alt: "가상 태풍 위치", icon: tcIcon({ size: 44, idx: 3, live: false }), draggable: true, zIndexOffset: 1000 }).addTo(map);
   const path = L.polyline([], { color: "#0a1f33", weight: 2.5, dashArray: "6 8", opacity: .7, lineCap: "round", interactive: false }).addTo(map);
 
+  // 모델이 배운 적 없는 입력은 계산은 하되 알려 준다
+  function warnings(s) {
+    const out = [], month = +s.date.slice(5, 7);
+    const est = 6.7 * Math.pow(Math.max(1010 - s.pres, 0), .644);       // 기압으로 어림한 풍속(kt)
+    if (Math.abs(s.wind - est) > 35) out.push(`풍속 ${s.wind}kt와 기압 ${s.pres}hPa는 함께 나타나기 어려운 조합이에요.`);
+    if (s.lat < 0 || s.lat > 50 || s.lon < 100 || s.lon > 180 || (s.lat > 40 && s.lon < 125) || (s.lat > 35 && s.lon < 118) || (s.lat > 22 && s.lon < 110)) out.push("태풍이 거의 지나지 않는 지역이라 결과를 믿기 어려워요.");
+    if (month <= 4 || month === 12) out.push("이 시기에는 한국·일본에 오는 태풍이 드물어 확률이 낮게 나와요.");
+    return out;
+  }
   function update() {
     form.querySelectorAll("label").forEach(l => {
       const i = l.querySelector("input[type=range]"), o = l.querySelector("output");
-      if (i && o) o.textContent = i.value;
+      if (i && o) { o.textContent = i.value; i.setAttribute("aria-valuetext", o.parentElement.textContent.trim()); }
     });
     const s = {
-      lat: pos[0], lon: pos[1], date: form.date.value || new Date().toISOString().slice(0, 10),
+      lat: pos[0], lon: pos[1], date: form.date.value || todayKST(),
       wind: +form.wind.value, pres: +form.pres.value, heading: +form.heading.value,
       speed: +form.speed.value, age: +form.age.value, dwind: +form.dwind.value,
     };
     const f = makeFeatures(s);
     const me = marker.getElement();
     if (me) me.firstChild.style.color = LV[lvIndex(s.wind, null)].color;
-    [["korea", "simK", "simKeta", "simKbar"], ["japan", "simJ", "simJeta", "simJbar"]].forEach(([c, id, eid, bid]) => {
+    [["korea", "simK", "simKeta", "simKbar", KOREA_CITIES], ["japan", "simJ", "simJeta", "simJbar", JAPAN_CITIES]].forEach(([c, id, eid, bid, cities]) => {
+      if (inZone(pos, cities)) {          // 모델은 영향권에 들어오기 전 시점만 배웠다
+        $(id).textContent = "영향권";
+        $(eid).textContent = "이미 영향권 안이에요";
+        setBar($(bid), 1);
+        return;
+      }
       const r = predict(model, c, f);
-      $(id).textContent = pct(r.p);
-      $(eid).textContent = r.p >= .2 ? `약 ${Math.max(0, Math.round(r.hours))}시간 뒤${r.lo != null ? ` (${Math.round(Math.max(0, Math.min(r.lo, r.hours)))}~${Math.round(Math.max(r.hi, r.hours))}시간)` : ""}` : "";
+      $(id).textContent = r.p < .01 ? "<1%" : pct(r.p);
+      $(eid).textContent = r.p >= .2 ? `온다면 약 ${Math.max(0, Math.round(r.hours))}시간 뒤${r.lo != null ? ` (${Math.round(Math.max(0, Math.min(r.lo, r.hours)))}~${Math.round(Math.max(r.hi, r.hours))}시간)` : ""}` : "";
       setBar($(bid), r.p);
     });
     const ahead = [pos];
     for (let h = 12; h <= 48; h += 12) ahead.push(destPoint(pos, s.heading, s.speed * h));
     path.setLatLngs(ahead);
     $("simPos").textContent = `${pos[0].toFixed(1)}°N ${pos[1].toFixed(1)}°E · 서울까지 ${Math.round(f.dist_seoul).toLocaleString()}km`;
+    const w = warnings(s), box = $("simWarn");
+    box.hidden = !w.length;
+    box.innerHTML = w.map(t => `<li>${t}</li>`).join("");
   }
   map.on("click", e => { pos = [e.latlng.lat, e.latlng.lng]; marker.setLatLng(pos); update(); });
   marker.on("drag", e => { const l = e.target.getLatLng(); pos = [l.lat, l.lng]; update(); });
   form.addEventListener("input", update);
-  seen(form.closest(".sim-panel"), update, .1);
+  update();
+  setTimeout(() => declutter(map), 300);
+  // 키보드: 표시에 초점을 두고 방향키로 1°씩 옮긴다
+  marker.getElement().addEventListener("keydown", e => {
+    const move = { ArrowUp: [1, 0], ArrowDown: [-1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+    if (!move) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pos = [pos[0] + move[0], pos[1] + move[1]];
+    marker.setLatLng(pos);
+    update();
+  });
 }
 
 /* ---------- 예측 시점 비교: 숫자 대결 ---------- */
 function renderVis(root, D) {
   if (!root) return;
-  const pair = (lab, unit, L, R) => {
-    const m = Math.max(L.v, R.v) || 1;
-    const side = (s, cls) => `<div class="side ${cls}" style="--c:${s.c}"><span class="nm">${s.n}</span><b class="num">${s.v}<small>${unit}</small></b><span class="va"><i style="--h:${(s.v / m * 100).toFixed(1)}"></i></span></div>`;
-    return `<section class="vs-row"><h4 class="vs-lab">${lab}</h4><div class="vs-cols">${side(L, "l")}${side(R, "r")}</div></section>`;
+  const pair = (lab, unit, L, R, note) => {
+    const side = (s, cls) => `<div class="side ${cls}" style="--c:${s.c}"><span class="nm">${s.n}</span><b class="num">${s.v}<small>${unit}</small></b></div>`;
+    return `<section class="vs-row"><h4 class="vs-lab">${lab}</h4><div class="vs-cols">${side(L, "l")}${side(R, "r")}</div>${note ? `<p class="vs-note">${note}</p>` : ""}</section>`;
   };
+  const diff = (a, b) => Math.abs(Math.round(a) - Math.round(b));
   let rows = "";
-  if (D.natK != null && D.natJ != null) rows += pair("발생에서 도착까지", "시간", { n: "한국", v: Math.round(D.natK), c: "var(--korea)" }, { n: "일본", v: Math.round(D.natJ), c: "var(--japan)" });
-  if (D.turnK != null && D.turnJ != null) rows += pair("도착 직전 48시간, 진행 방향이 꺾인 각도", "°", { n: "한국", v: D.turnK, c: "var(--korea)" }, { n: "일본", v: D.turnJ, c: "var(--japan)" });
-  if (D.fc != null && D.ours != null) rows += pair("도착 전 첫 경보 시점", "시간", { n: "기상청 예보", v: Math.round(D.fc), c: "var(--warn)" }, { n: "우리 모델", v: Math.round(D.ours), c: "var(--frost)" });
-  if (D.gap != null) rows += `<section class="vs-row gp"><h4 class="vs-lab">기상청 첫 발표가 일본 기록보다 늦은 시간</h4><div class="gp-in"><span class="nm" style="--c:var(--japan)">일본 첫 기록</span><div class="gp-mid"><b class="num">${D.gap}<small>시간</small></b><i class="gp-ln"></i></div><span class="nm" style="--c:var(--warn)">기상청 첫 발표</span></div></section>`;
-  const note = rows ? `<p class="cmp-note">일본 기록은 열대저압부 단계부터 시작될 수 있음${D.n != null ? ` · 기상청 첫 발표 비교 ${D.n}개 태풍` : ""}</p>` : "";
-  root.innerHTML = `<div class="vs">${rows}</div>${note}`;
+  if (D.natK != null && D.natJ != null) rows += pair("발생에서 도착까지(중앙값)", "시간", { n: "한국", v: Math.round(D.natK), c: "var(--korea)" }, { n: "일본", v: Math.round(D.natJ), c: "var(--japan)" },
+    D.natK > D.natJ ? `태풍이 한국까지 오는 데 일본보다 ${diff(D.natK, D.natJ)}시간 더 걸려요.` : "");
+  if (D.turnK != null && D.turnJ != null) rows += pair("도착 직전 48시간, 진행 방향이 꺾인 각도", "°", { n: "한국", v: D.turnK, c: "var(--korea)" }, { n: "일본", v: D.turnJ, c: "var(--japan)" },
+    D.turnK > D.turnJ ? "한국에 올 때 진로가 더 많이 꺾여서, 시간이 더 있어도 미리 맞히기 어려워요." : "");
+  if (D.fc != null && D.ours != null) rows += pair("한국 도착 전, 처음 경보한 시점(중앙값)", "시간 전", { n: "기상청 예보", v: Math.round(D.fc), c: "var(--warn)" }, { n: "우리 모델", v: Math.round(D.ours), c: "var(--ours)" },
+    D.fc > D.ours ? `기상청 예보가 약 ${diff(D.fc, D.ours)}시간 먼저 알려요. 이 사이트보다 기상청 예보를 먼저 보세요.` : "");
+  if (D.gap != null) rows += `<section class="vs-row gp"><h4 class="vs-lab">기상청 첫 발표가 일본 첫 기록보다 늦은 시간(중앙값)</h4><div class="gp-in"><span class="nm" style="--c:var(--japan)">일본 첫 기록</span><div class="gp-mid"><b class="num">${D.gap}<small>시간</small></b><i class="gp-ln"></i></div><span class="nm" style="--c:var(--warn)">기상청 첫 발표</span></div><p class="vs-note">일본은 약한 열대저압부 단계부터 기록하는 경우가 많아요${D.n != null ? `(비교 태풍 ${D.n}개)` : ""}.</p></section>`;
+  root.innerHTML = `<div class="vs">${rows}</div>`;
   root.querySelectorAll(".vs-row").forEach((e, i) => { e.style.setProperty("--r", i); seen(e, () => e.classList.add("in"), .3); });
 }
 
@@ -395,7 +634,7 @@ function renderCompare(stats, kma) {
   const kmaF = kma && kma.korea_lead && kma.korea_lead.since_2015_same_as_model && kma.korea_lead.since_2015_same_as_model.first_fcst_track_in_korea;
   const kmaFirst = kma && kma.kma_first_issue_vs_jma_first_record && kma.kma_first_issue_vs_jma_first_record.all;
   const agency = kmaFirst ? { n: kmaFirst.n, h: kmaFirst.median_h } : (a.agency_tracking_start ? { n: a.agency_tracking_start.storms, h: a.agency_tracking_start.median_kma_minus_jma_h } : null);
-  const ours = kma && kma.our_model_korea_full && has(kma.our_model_korea_full.median_warning_lead_h) ? kma.our_model_korea_full.median_warning_lead_h : warn("korea");
+  const ours = warn("korea");       // 지표 표·차트와 같은 값(analysis.json)
   const ko = { korea: "한국", japan: "일본" };
 
   const sinceF = kma && kma.korea_lead && kma.korea_lead.since_2015_same_as_model;
@@ -426,6 +665,7 @@ function renderCompare(stats, kma) {
     if (leadF.korea) sets.push(line("한국 환경 모델", leadF.korea, C.korea, { borderWidth: 3 }));
     if (leadP.korea) sets.push(line("한국 경로 모델", leadP.korea, C.korea, { borderDash: [6, 5], borderWidth: 1.8, pointRadius: 2 }));
     if (leadF.japan) sets.push(line("일본 환경 모델", leadF.japan, C.japan, { borderWidth: 1.8, pointRadius: 2 }));
+    if (leadP.japan) sets.push(line("일본 경로 모델", leadP.japan, C.japan, { borderDash: [6, 5], borderWidth: 1.4, pointRadius: 2 }));
   } else {
     ["korea", "japan"].forEach(c => leadP[c] && sets.push(line(`${ko[c]} 모델`, leadP[c], C[c])));
   }
@@ -443,6 +683,9 @@ function renderCompare(stats, kma) {
     });
     runWipe(ch);
   }, .25);
+  const leadRows = sets.map(d => [d.label, ...d.data.map(v => `${Math.round(v)}%`)]);
+  $("leadTable").innerHTML = tableHtml(["구분", ...leads.map(h => `${h}시간 전`)], leadRows);
+  describeChart($("leadChart"), `도착 전 경보 비율 그래프. ${leadRows.map(r => `${r[0]} 48시간 전 ${r[2]}`).join(", ")}. 자세한 값은 아래 표에 있습니다.`);
 
   // 요인: 가는 막대 표
   const fi = a.feature_importance;
@@ -450,7 +693,7 @@ function renderCompare(stats, kma) {
     .sort((x, y) => (fi.korea[y] || 0) - (fi.korea[x] || 0)).slice(0, 6);
   const mx = Math.max(...keys.map(k => Math.max(fi.korea[k] || 0, fi.japan[k] || 0))) || 1;
   $("factors").innerHTML = `<div class="fac-head"><span style="flex:1">예측에 크게 작용한 요인</span><span>한국</span><span>일본</span></div>`
-    + keys.map(k => `<div class="fac"><span>${FEATURE_KO[k] || k}</span><div class="bars"><i class="bar korea"><u data-p="${(fi.korea[k] || 0) / mx}" style="background:${C.korea}"></u></i><i class="bar japan"><u data-p="${(fi.japan[k] || 0) / mx}" style="background:${C.japan}"></u></i></div></div>`).join("");
+    + keys.map(k => `<div class="fac"><span>${FEATURE_KO[k] || "기타 요인"}</span><div class="bars"><i class="bar korea"><u data-p="${(fi.korea[k] || 0) / mx}" style="background:${C.korea}"></u></i><i class="bar japan"><u data-p="${(fi.japan[k] || 0) / mx}" style="background:${C.japan}"></u></i></div></div>`).join("");
   seen($("factors"), () => $("factors").querySelectorAll(".bar u").forEach(u => setBar(u, +u.dataset.p)), .2);
 
   // 모델 지표: 한 장의 표
@@ -464,13 +707,25 @@ function renderCompare(stats, kma) {
     if (m[c]) rows.push(trow(`${t} 경로 모델`, m[c].auc, m[c].arrival_mae_h, leadP[c] && leadP[c].median_warning_lead_h));
     if (c === "korea" && kmaF && has(kmaF.median_warning_lead_h)) rows.push(trow(`<span class="w-t">기상청</span> 예보`, null, null, kmaF.median_warning_lead_h));
   });
-  $("metrics").innerHTML = `<table><thead><tr><th>검증 2015년~</th><th>AUC</th><th>도착 시간 오차</th><th>첫 경보 중앙값</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  $("metrics").innerHTML = `<table><thead><tr><th>2015년~</th><th>AUC</th><th>도착 시간 오차</th><th>첫 경보 중앙값</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  $("metricsNote").textContent = "AUC는 1에 가까울수록 올 태풍과 안 올 태풍을 잘 가려낸다는 뜻이에요. 경로 모델은 태풍의 위치와 세기만, 환경 모델은 상공 바람까지 씁니다. 모델 설정과 경보 기준을 고를 때도 이 기간을 봐서 실제 성능은 조금 낮을 수 있어요. 2015년 이전 자료만으로 비교해도 같은 설정이 가장 좋았어요.";
 }
 
 /* ---------- 지난 태풍 ---------- */
 function renderHistory(history) {
-  const sel = $("histSel"), scrub = $("scrub"), play = $("play");
-  history.forEach((s, i) => sel.add(new Option(`${s.season} ${s.name}`, i)));
+  const sel = $("histSel"), scrub = $("scrub"), play = $("play"), q = $("histQ");
+  const fillOptions = (keep) => {
+    const w = q.value.trim().toUpperCase();
+    sel.length = 0;
+    history.forEach((s, i) => {
+      const title = `${s.season} ${stormFull(s)}`;
+      if (!w || title.toUpperCase().includes(w)) sel.add(new Option(`${title} · ${kst(s.arrival).replace(/ \d+시$/, "")} 한국 도달`, i));
+    });
+    $("histCount").textContent = sel.length ? `${sel.length}개` : "찾는 태풍이 없어요. 2015년 이후 한국에 영향을 준 태풍만 있어요.";
+    if (keep != null && [...sel.options].some(o => +o.value === keep)) sel.value = keep;
+    sel.disabled = !sel.length;
+  };
+  fillOptions();
   const map = baseMap("histMap", [30, 128], 4);
   drawCities(map);
   const layer = L.layerGroup().addTo(map);
@@ -493,6 +748,15 @@ function renderHistory(history) {
   };
   const hoursTo = t => (utc(t[0]) - utc(cur.arrival)) / 36e5;
 
+  // 첫 경보(analyze.warning_lead 와 같은 정의): 도착 전 처음 확률이 기준을 넘긴 시점
+  function summary() {
+    const first = cur.track.find(t => (t[5] || 0) >= WARN_P && hoursTo(t) < 0);
+    const lead = first ? -hoursTo(first) : null;
+    return `<b>${cur.season} ${stormFull(cur)}</b> · 한국 영향권 진입 ${kst(cur.arrival)}. `
+      + (first ? `모델은 ${lead}시간 전에 처음 경보(확률 40% 이상)를 냈어요.` : "모델은 도착 전에 경보를 내지 못했어요.")
+      + (cur.arrival_japan ? ` 일본 영향권 진입 ${kst(cur.arrival_japan)}.` : "");
+  }
+
   function setFrame(i) {
     const t = cur.track[i];
     cursor.setLatLng([t[1], t[2]]);
@@ -504,7 +768,7 @@ function renderHistory(history) {
       if (lb) lb.innerHTML = chipLabel(kst(t[0]).replace(/^\d+월 /, ""), k, t[4] != null ? Math.round(t[4]) : null);
     }
     tr && tr.restyle();
-    $("scrubTime").textContent = `${kst(t[0])} · 한국 ${pct(t[5] || 0)}`;
+    $("scrubTime").textContent = `${kst(t[0])} · 한국 ${pct(t[5] || 0)} · 일본 ${pct(t[6] || 0)}`;
     chart && chart.update("none");
   }
 
@@ -513,11 +777,15 @@ function renderHistory(history) {
     cur = history[i];
     tr && tr.cancel();
     layer.clearLayers();
-    tr = drawTrack(layer, cur.track, { weight: 4, cls: "tc-hist", opacityOf: k => k < +scrub.value ? 1 : .25 });
+    tr = drawTrack(layer, cur.track, { weight: 4, cls: "tc-hist", opacityOf: k => k < +scrub.value ? 1 : .25, done: () => declutter(map) });
     cursor.addTo(layer);
-    map.flyToBounds(cur.track.map(t => [t[1], t[2]]), { padding: [30, 30], duration: .8 });
+    map.flyToBounds(cur.track.map(t => [t[1], t[2]]), { padding: [40, 40], duration: .8 });
     scrub.max = cur.track.length - 1;
     scrub.value = 0;
+    $("histSummary").innerHTML = summary();
+    const sample = cur.track.filter((_, k) => k % 2 === 0);
+    $("histTable").innerHTML = tableHtml(["시각", "한국 도착까지", "한국", "일본"], sample.map(t => [kst(t[0]), hoursTo(t) < 0 ? `${-hoursTo(t)}시간 전` : hoursTo(t) === 0 ? "도착" : `도착 ${hoursTo(t)}시간 뒤`, pct(t[5] || 0), pct(t[6] || 0)]));
+    describeChart($("histChart"), `${cur.season} ${stormName(cur)}의 시간별 도달 확률 그래프. 자세한 값은 아래 표에 있습니다.`);
     const pts = c => cur.track.map(t => ({ x: hoursTo(t), y: (t[c] || 0) * 100 }));
     const data = {
       datasets: [
@@ -531,11 +799,19 @@ function renderHistory(history) {
       options: {
         maintainAspectRatio: false, animation: { duration: REDUCED ? 0 : 1200 }, interaction: { mode: "nearest", axis: "x", intersect: false },
         layout: { padding: { right: 40 } },
-        scales: {
-          x: { type: "linear", bounds: "data", ticks: { callback: v => v === 0 ? "도착" : `${v > 0 ? "+" : ""}${v}h`, stepSize: 24, maxRotation: 0, autoSkip: true } },
-          y: { min: 0, max: 100, ticks: { callback: v => v + "%" } },
+        onClick(e, _, c) {                 // 누른 곳과 가장 가까운 시점으로 이동
+          const x = c.scales.x.getValueForPixel(e.x);
+          let best = 0;
+          cur.track.forEach((t, k) => { if (Math.abs(hoursTo(t) - x) < Math.abs(hoursTo(cur.track[best]) - x)) best = k; });
+          stop();
+          scrub.value = best;
+          setFrame(best);
         },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => `도착 ${i[0].parsed.x}시간`, label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
+        scales: {
+          x: { type: "linear", bounds: "data", title: { display: true, text: "한국 도착 전후 시간 (0이 도착, -48h는 48시간 전)" }, ticks: { callback: v => v === 0 ? "도착" : `${v > 0 ? "+" : ""}${v}h`, stepSize: 24, maxRotation: 0, autoSkip: true } },
+          y: { min: 0, max: 100, title: { display: true, text: "5일 안 도달 확률" }, ticks: { callback: v => v + "%" } },
+        },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => i[0].parsed.x < 0 ? `도착 ${-i[0].parsed.x}시간 전` : i[0].parsed.x === 0 ? "도착" : `도착 ${i[0].parsed.x}시간 뒤`, label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
       },
     });
     setFrame(0);
@@ -555,25 +831,40 @@ function renderHistory(history) {
   });
   scrub.addEventListener("input", () => { stop(); setFrame(+scrub.value); });
   sel.addEventListener("change", () => load(+sel.value));
-  seen($("histMap"), () => load(0), .1);
+  q.addEventListener("input", () => {
+    const keep = cur ? history.indexOf(cur) : null;
+    fillOptions(keep);
+    if (!sel.length) $("histSummary").textContent = "";
+    else if (+sel.value !== keep) load(+sel.value);
+    else $("histSummary").innerHTML = summary();
+  });
+  seen($("histMap"), () => load(+sel.value || 0), .1);
 }
 
 /* ---------- 통계 ---------- */
 function renderStats(stats) {
-  const mo = stats.korea_by_month, mmax = Math.max(...mo) || 1, mpeak = mo.indexOf(Math.max(...mo));
-  $("monthList").innerHTML = mo.map((v, i) => `<div class="mrow${i === mpeak ? " peak" : ""}"><span>${i + 1}월</span><i class="bar"><u data-p="${v / mmax}"></u></i><b>${v}</b></div>`).join("");
-  seen($("monthList"), () => $("monthList").querySelectorAll(".bar u").forEach((u, i) => setTimeout(() => setBar(u, +u.dataset.p), REDUCED ? 0 : i * 45)), .2);
+  const mo = stats.korea_by_month, jm = stats.japan_by_month, mpeak = mo.indexOf(Math.max(...mo));
+  const mmax = Math.max(...mo, ...(jm || [])) || 1;
+  $("monthList").innerHTML = `<div class="mrow head"><span></span><span></span><b class="k-t">한국</b><b class="j-t">${jm ? "일본" : ""}</b></div>`
+    + mo.map((v, i) => `<div class="mrow${i === mpeak ? " peak" : ""}"><span>${i + 1}월</span><div class="bars"><i class="bar"><u data-p="${v / mmax}"></u></i>${jm ? `<i class="bar japan"><u data-p="${jm[i] / mmax}"></u></i>` : ""}</div><b>${v}</b><b class="j-t">${jm ? jm[i] : ""}</b></div>`).join("");
+  seen($("monthList"), () => $("monthList").querySelectorAll(".bar u").forEach((u, i) => setTimeout(() => setBar(u, +u.dataset.p), REDUCED ? 0 : i * 25)), .2);
 
-  const years = Object.keys(stats.korea_by_year), yv = years.map(y => stats.korea_by_year[y]), ymax = Math.max(...yv);
+  const years = Object.keys(stats.korea_by_year), yv = years.map(y => stats.korea_by_year[y]);
+  const yj = stats.japan_by_year ? years.map(y => stats.japan_by_year[y]) : null;
+  const row = (y, i) => yj ? [y, yv[i], yj[i]] : [y, yv[i]];
+  $("yearTable").innerHTML = tableHtml(yj ? ["연도", "한국", "일본"] : ["연도", "한국"], [...years].map(row).reverse());
+  const mean = a => (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1);
+  describeChart($("yearChart"), `연도별 영향 태풍 수 그래프. 한 해 평균 한국 ${mean(yv)}개${yj ? `, 일본 ${mean(yj)}개` : ""}. 자세한 값은 아래 표에 있습니다.`);
   seen($("yearChart").closest(".chart-box"), () => {
     if (!window.Chart) return;
+    const line = (label, data, color) => ({ label, data, borderColor: color, backgroundColor: color, borderWidth: 1.8, pointRadius: 0, pointHoverRadius: 4, tension: .15 });
     new Chart($("yearChart"), {
-      type: "bar",
-      data: { labels: years, datasets: [{ data: yv, backgroundColor: yv.map(v => v === ymax ? C.korea : C.ink), borderRadius: 0, barPercentage: .62, categoryPercentage: 1 }] },
+      type: "line", plugins: [endLabels],
+      data: { labels: years, datasets: [...(yj ? [line("일본", yj, C.japan)] : []), line("한국", yv, C.korea)] },
       options: {
-        maintainAspectRatio: false, animation: { duration: REDUCED ? 0 : 1400, easing: "easeOutCubic" },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.parsed.y}개` } } },
-        scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0 } }, y: { ticks: { stepSize: 1 } } },
+        maintainAspectRatio: false, animation: { duration: REDUCED ? 0 : 900, easing: "easeOutCubic" }, interaction: { mode: "index", intersect: false }, layout: { padding: { right: 36 } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y}개` } } },
+        scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0 } }, y: { min: 0, ticks: { stepSize: 2 } } },
       },
     });
   }, .2);
@@ -583,10 +874,20 @@ function renderReliability(rel) {
   const ko = { korea: "한국", japan: "일본" };
   const cs = ["korea", "japan"].filter(c => rel[c] && rel[c].length);
   if (!cs.length) return;
-  $("relBox").hidden = false;
-  $("relTable").innerHTML = `<table><thead><tr><th></th><th>모델 확률</th><th>실제 비율</th><th>시점 수</th></tr></thead><tbody>`
-    + cs.map(c => rel[c].map(([p, o, n]) => `<tr><td>${ko[c]}</td><td>${Math.round(p * 100)}%</td><td>${Math.round(o * 100)}%</td><td>${n.toLocaleString()}</td></tr>`).join("")).join("")
-    + "</tbody></table>";
+  $("reliability").hidden = false;
+  $("relLink").hidden = false;
+  // 모델 50%일 때 실제 비율(앞뒤 구간 사이 직선 보간)
+  const at50 = rows => {
+    const k = rows.findIndex(r => r[0] >= .5);
+    if (k <= 0) return null;
+    const [a, b] = [rows[k - 1], rows[k]];
+    return a[1] + (b[1] - a[1]) * (.5 - a[0]) / (b[0] - a[0]);
+  };
+  const parts = cs.map(c => [ko[c], at50(rel[c])]).filter(x => x[1] != null).map(([n, v]) => `${n} 약 ${Math.round(v * 100)}%`);
+  $("relLead").textContent = parts.length ? `모델이 50%라고 할 때 실제로 온 비율은 ${parts.join(", ")}였어요.` : "";
+  $("relTable").innerHTML = tableHtml(["나라", "모델 확률", "실제 비율", "사례 수(6시간 단위)"],
+    cs.flatMap(c => rel[c].map(([p, o, n]) => [ko[c], `${Math.round(p * 100)}%`, `${Math.round(o * 100)}%`, `${n.toLocaleString()}${n < 100 ? " · 사례 적음" : ""}`])));
+  describeChart($("relChart"), `모델 확률과 실제 비율 비교 그래프. ${$("relLead").textContent} 자세한 값은 아래 표에 있습니다.`);
   seen($("relChart").closest(".chart-box"), () => {
     if (!window.Chart) return;
     const sets = [{ label: "", data: [{ x: 0, y: 0 }, { x: 100, y: 100 }], borderColor: C.muted, borderDash: [4, 5], borderWidth: 1.2, pointRadius: 0, pointHitRadius: 0 }]
@@ -608,88 +909,23 @@ function renderReliability(rel) {
           legend: { display: false },
           tooltip: { filter: i => i.dataset.label, callbacks: {
             title: () => "",
-            label: i => `${i.dataset.label}: 모델 ${i.parsed.x.toFixed(0)}% → 실제 ${i.parsed.y.toFixed(0)}% (시점 ${i.raw.n.toLocaleString()}개)` } },
+            label: i => `${i.dataset.label}: 모델 ${i.parsed.x.toFixed(0)}% → 실제 ${i.parsed.y.toFixed(0)}% (사례 ${i.raw.n.toLocaleString()}개)` } },
         },
       },
     });
   }, .2);
 }
 
-/* ---------- 서리 ---------- */
-function renderFrost(fr) {
-  const form = $("frostForm");
-  const COL = ["#9fd8ea", "#ff7a6b", "#63aeff", "#f6b94e", "#5fd6a0", "#c39bff"];
-  const ST = fr.stations;
-  ST.forEach(s => form.stn.add(new Option(s.name, s.stn)));
-  const y = new Date().getFullYear();
-  form.date.value = `${y}-11-15`;
-  const val = n => +form[n].value;
-  function update() {
-    form.querySelectorAll("label").forEach(l => {
-      const i = l.querySelector("input[type=range]"), o = l.querySelector("output");
-      if (i && o) o.textContent = i.value;
-    });
-    const st = ST.find(s => String(s.stn) === form.stn.value) || ST[0];
-    const d = new Date((form.date.value || `${y}-11-15`) + "T00:00:00Z");
-    const doy = Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 0)) / 864e5);
-    const o = {
-      TA_AVG: val("TA_AVG"), TA_MAX: val("TA_MAX"), TA_MIN: val("TA_MIN"), TD_AVG: val("TD_AVG"),
-      TS_AVG: val("TA_AVG"), TG_MIN: val("TG_MIN"), HM_AVG: val("HM_AVG"), HM_MIN: Math.max(5, val("HM_AVG") - 20),
-      WS_AVG: val("WS_AVG"), WS_MAX: val("WS_AVG") * 2.2, PS_AVG: 1015, CA_TOT: val("CA_TOT"),
-      SS_DAY: Math.max(0, (10 - val("CA_TOT")) * 0.9), RN_DAY: 0, SD_MAX: 0,
-      d_TA_MIN: 0, d_PS_AVG: 0, d_TD_AVG: 0,
-      doy_sin: Math.sin(2 * Math.PI * doy / 365.25), doy_cos: Math.cos(2 * Math.PI * doy / 365.25),
-      stn_lat: st.lat, stn_lon: st.lon,
-    };
-    const x = fr.features.map(f => (o[f] ?? NaN));
-    const p = 1 / (1 + Math.exp(-runTrees(fr.clf, x)));
-    $("frostP").textContent = pct(p);
-    setBar($("frostBar"), p);
-  }
-  form.addEventListener("input", update);
-  seen(form.closest(".sim-panel"), update, .1);
-
-  seen($("frostChart").closest(".chart-box"), () => {
-    if (!window.Chart) return;
-    const ch = new Chart($("frostChart"), {
-      type: "line", plugins: [wipePlugin, endLabels],
-      data: {
-        labels: [...Array(12)].map((_, i) => `${i + 1}월`),
-        datasets: ST.map((s, i) => ({
-          label: s.name, data: s.rate.map(v => v * 100), borderColor: COL[i % 6], backgroundColor: COL[i % 6],
-          tension: .35, borderWidth: i === 0 ? 2.8 : 1.8, pointRadius: 0, pointHoverRadius: 4,
-        })),
-      },
-      options: {
-        maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
-        layout: { padding: { right: 52, top: 6 } },
-        scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } }, x: { grid: { display: false } } },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
-      },
-    });
-    runWipe(ch, 2000);
-  }, .25);
-
-  const mmdd = t => { const [m, d] = String(t).split("-"); return `${+m}월 ${+d}일`; };
-  $("frostStations").innerHTML = `<table><thead><tr><th>지점</th><th>첫서리 평균</th><th>끝서리 평균</th></tr></thead><tbody>`
-    + ST.map((s, i) => `<tr><td><i style="background:${COL[i % 6]}"></i>${s.name}</td><td>${mmdd(s.first_avg)}</td><td>${mmdd(s.last_avg)}</td></tr>`).join("") + `</tbody></table>`;
-  const m = fr.metrics || {};
-  const cols = [];
-  if (m.auc != null) cols.push(["AUC", m.auc]);
-  if (m.f1 != null) cols.push(["F1", m.f1]);
-  if (m.persistence_f1 != null) cols.push(["F1 단순 지속", m.persistence_f1]);
-  $("frostMetrics").innerHTML = cols.length ? `<table><thead><tr><th>검증</th>${cols.map(c => `<th>${c[0]}</th>`).join("")}</tr></thead><tbody><tr><td>서리 모델</td>${cols.map(c => `<td>${c[1]}</td>`).join("")}</tr></tbody></table>` : "";
-}
-
 /* ---------- 시작 ---------- */
 document.querySelectorAll(".sec-head").forEach(el => seen(el, () => el.classList.add("in"), .9));
 
-const FAIL = `<p class="empty">자료를 불러오지 못했습니다</p>`;
+const FAIL_HTML = `자료를 불러오지 못했습니다. <button type="button" class="retry">다시 시도</button> <a href="${KMA_URL}" target="_blank" rel="noopener">기상청 태풍 정보</a>`;
+document.addEventListener("click", e => { if (e.target.classList && e.target.classList.contains("retry")) location.reload(); });
 function unavailable(id) {
   const w = document.querySelector(`#${id} .wrap`);
   if (!w) return;
   [...w.children].filter(c => !c.classList.contains("sec-head")).forEach(c => c.remove());
-  w.insertAdjacentHTML("beforeend", FAIL);
+  w.insertAdjacentHTML("beforeend", `<p class="empty">${FAIL_HTML}</p>`);
 }
 function guard(id, data, fn) {
   try {
@@ -697,19 +933,33 @@ function guard(id, data, fn) {
     fn(data);
   } catch (e) {
     console.warn(id, e);
-    if (id === "now") { $("nowList").innerHTML = `<li class="empty" style="cursor:default;animation:none">자료를 불러오지 못했습니다</li>`; }
+    if (id === "now") {
+      $("nowList").innerHTML = `<li class="empty" style="cursor:default;animation:none">${FAIL_HTML}</li>`;
+      if (!$("nowMap").children.length) $("nowMap").innerHTML = `<p class="map-empty">자료가 없어 지도를 그리지 못했어요</p>`;
+    }
     else unavailable(id);
   }
 }
 
-Promise.all(["latest", "stats", "history", "model", "kma_lead", "frost"].map(n => soft(`data/${n}.json`)))
-  .then(([latest, stats, history, model, kma, frost]) => {
-    guard("now", latest && latest.storms && latest, renderNow);
-    guard("history", history && history.length && history, renderHistory);
-    guard("compare", stats && stats.analysis && stats, s => renderCompare(s, kma));
-    guard("sim", model, renderSim);
-    if (frost && frost.stations && frost.stations.length && frost.clf) guard("frost", frost, renderFrost);
-    else { $("frost").hidden = true; $("navFrost").hidden = true; }
-    guard("stats", stats && stats.korea_by_month && stats.korea_by_year && stats, renderStats);
-    guard("reliability", stats && stats.reliability, renderReliability);
-  });
+// 자료마다 따로 그린다. 현재 태풍을 먼저 보여 주고, 큰 파일(직접 예측 모델)은 그 섹션 가까이 왔을 때 받는다
+soft("data/latest.json").then(latest => guard("now", latest && latest.storms && latest, renderNow));
+soft("data/history.json").then(history => guard("history", history && history.length && history, renderHistory));
+Promise.all(["stats", "kma_lead"].map(n => soft(`data/${n}.json`))).then(([stats, kma]) => {
+  guard("compare", stats && stats.analysis && stats, s => renderCompare(s, kma));
+  guard("stats", stats && stats.korea_by_month && stats.korea_by_year && stats, renderStats);
+  if (stats && stats.reliability) guard("reliability", stats.reliability, renderReliability);
+});
+near($("sim"), () => soft("data/model.json").then(model => guard("sim", model, renderSim)));
+// 메뉴에 지금 보는 섹션 표시(좁은 화면에서는 그 메뉴가 보이도록 옆으로 밀기)
+if ("IntersectionObserver" in window) {
+  const links = [...document.querySelectorAll(".top nav a")], nav = document.querySelector(".top nav");
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return;
+    links.forEach(a => {
+      const on = a.getAttribute("href") === `#${e.target.id}`;
+      if (on) { a.setAttribute("aria-current", "true"); nav.scrollTo({ left: a.offsetLeft - nav.offsetLeft - 40, behavior: REDUCED ? "auto" : "smooth" }); }
+      else a.removeAttribute("aria-current");
+    });
+  }), { rootMargin: "-45% 0px -50% 0px" });
+  document.querySelectorAll("main > section").forEach(sec => io.observe(sec));
+}

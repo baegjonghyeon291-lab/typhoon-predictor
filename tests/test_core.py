@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from typhoon import env_gfs, forecast_log
+from typhoon import env_atmos, env_gfs, export, features, forecast_log, realtime
 from typhoon.data import ROOT, haversine, min_dist
 from typhoon.env_atmos import features_from
 from typhoon.export import approach
@@ -43,6 +43,180 @@ def test_gfs_coarsen_grid_matches_ncep():
     assert np.allclose(c, 7)
 
 
+def test_gfs_decode_real_grib():
+    """eccodes 를 실제로 불러 GRIB 메시지를 해독한다(서버에서 라이브러리가 동작하는지 함께 확인)."""
+    eccodes = pytest.importorskip("eccodes")
+    h = eccodes.codes_grib_new_from_samples("regular_ll_pl_grib2")
+    for k, v in [("Ni", 720), ("Nj", 361), ("latitudeOfFirstGridPointInDegrees", 90.0),
+                 ("longitudeOfFirstGridPointInDegrees", 0.0), ("latitudeOfLastGridPointInDegrees", -90.0),
+                 ("longitudeOfLastGridPointInDegrees", 359.5), ("iDirectionIncrementInDegrees", 0.5),
+                 ("jDirectionIncrementInDegrees", 0.5)]:
+        eccodes.codes_set(h, k, v)
+    lat = np.linspace(90, -90, 361)
+    eccodes.codes_set_values(h, np.repeat(lat, 720).astype(float))     # 값 = 위도
+    msg = eccodes.codes_get_message(h)
+    eccodes.codes_release(h)
+    f = env_gfs._decode(msg)
+    assert f.shape == (len(env_gfs.LAT), len(env_gfs.LON))
+    assert f[0, 0] == pytest.approx(0, abs=.01) and f[-1, 0] == pytest.approx(60, abs=.01)  # 0~60N 오름차순
+
+
+def test_gfs_bad_message_only_skips_that_day(tmp_path, monkeypatch):
+    monkeypatch.setattr(env_gfs, "GFS", tmp_path)
+    def broken(*a):
+        raise RuntimeError("잘린 GRIB")
+    monkeypatch.setattr(env_gfs, "_fetch_cycle", broken)
+    assert env_gfs.fetch_day(pd.Timestamp("2026-10-01")) is None
+
+
+def test_gfs_corrupt_cache_is_replaced(tmp_path, monkeypatch):
+    monkeypatch.setattr(env_gfs, "GFS", tmp_path)
+    monkeypatch.setattr(env_gfs, "_fetch_cycle", lambda *a: None)
+    day = pd.Timestamp("2026-10-01")
+    env_gfs._path(day).write_bytes(b"not npz")
+    assert env_gfs.fetch_day(day) is None
+    assert not env_gfs._path(day).exists()
+
+
+def _gfs_df(lat=20.0):
+    return pd.DataFrame({"SID": ["A", "A", "OLD"], "time": pd.to_datetime(["2026-10-02T00", "2026-10-02T06", "2026-01-01T00"]),
+                         "LAT": [lat, 21.0, 20.0], "LON": [130.0, 130.0, 130.0],
+                         "atm_z500": [np.nan, np.nan, 5800.0], "atm_u_steer": [np.nan, np.nan, 1.0]})
+
+
+def test_gfs_fill_reuses_cached_features(tmp_path, monkeypatch):
+    monkeypatch.setattr(env_gfs, "FEATURES_CACHE", tmp_path / "features.parquet")
+    calls = []
+    def fake(pts, workers=8):
+        calls.append(sorted(pts.SID.unique()))
+        return pd.DataFrame({"SID": pts.SID, "time": pts.time, "atm_z500": 5900.0, "atm_u_steer": 2.0}, index=pts.index)
+    monkeypatch.setattr(env_gfs, "features", fake)
+    r = env_gfs.fill(_gfs_df())
+    assert calls == [["A"]]
+    assert r.env_src.tolist() == ["gfs", "gfs", "ncep"]
+    assert r.atm_z500.tolist() == [5900.0, 5900.0, 5800.0]
+    r2 = env_gfs.fill(_gfs_df())                     # 같은 태풍·같은 위치는 다시 계산하지 않음
+    assert calls == [["A"]] and r2.env_src.tolist() == ["gfs", "gfs", "ncep"]
+    env_gfs.fill(_gfs_df(lat=22.0))                  # 위치가 바뀌면(IBTrACS 개정) 다시 계산
+    assert calls == [["A"], ["A"]]
+
+
+def test_gfs_fill_retries_blank_rows_only_while_day_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(env_gfs, "GFS", tmp_path)
+    monkeypatch.setattr(env_gfs, "FEATURES_CACHE", tmp_path / "features.parquet")
+    calls = []
+    def blank(pts, workers=8):
+        calls.append(1)
+        return pd.DataFrame({"SID": pts.SID, "time": pts.time, "atm_z500": np.nan, "atm_u_steer": np.nan}, index=pts.index)
+    monkeypatch.setattr(env_gfs, "features", blank)
+    env_gfs.fill(_gfs_df())
+    env_gfs.fill(_gfs_df())                          # 전날 자료가 아직 없으면 다시 시도
+    assert len(calls) == 2
+    env_gfs._path(pd.Timestamp("2026-10-01")).write_bytes(b"x")
+    env_gfs.fill(_gfs_df())                          # 자료가 있는데 비었으면 다시 계산해도 그대로라 건너뜀
+    assert len(calls) == 2
+
+
+def test_gfs_fetch_stops_at_time_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(env_gfs, "GFS", tmp_path)
+    monkeypatch.setattr(env_gfs, "BUDGET_S", -1)
+    monkeypatch.setattr(env_gfs, "_fetch_cycle", lambda *a: pytest.fail("제한 시간이 지나면 받지 않음"))
+    with pytest.warns(RuntimeWarning, match="제한"):
+        assert env_gfs.fetch([pd.Timestamp("2026-10-01")]) == {}
+
+
+def test_gfs_failure_keeps_update_going(tmp_path, monkeypatch):
+    monkeypatch.setattr(features, "ENV_FILES", [])
+    def broken(df):
+        raise RuntimeError("GFS 고장")
+    monkeypatch.setattr(env_gfs, "fill", broken)
+    with pytest.warns(RuntimeWarning, match="GFS 보충 실패"):
+        r = features.add_env(_gfs_df().rename(columns={"atm_z500": "atm_shear"}), gfs=True)
+    assert r.env_src.tolist() == [None, None, "ncep"]    # 재분석 출처는 남는다
+
+
+def test_gfs_no_empty_rows_still_reports_source(tmp_path):
+    d = _gfs_df().iloc[[2]]
+    assert env_gfs.fill(d).env_src.tolist() == ["ncep"]
+
+
+# ---------------------------------------------------------------- 자동 갱신 보호
+def test_server_last_day_falls_back_to_previous_year(monkeypatch):
+    now = env_atmos.dt.datetime.utcnow().year
+    class DS:
+        time = type("T", (), {"values": np.array(["2026-03-17T00"], "datetime64[ns]")})
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    def opener(url):
+        if str(now) in url:
+            raise OSError("없는 파일")
+        return DS()
+    monkeypatch.setattr(env_atmos.xr, "open_dataset", opener)
+    assert env_atmos.server_last_day() == pd.Timestamp("2026-03-17")
+
+
+def test_refresh_sources_checks_ncep_only_inside_time_limit(monkeypatch):
+    """서버 확인은 강제 종료할 수 있는 하위 프로세스 안에서만 한다."""
+    monkeypatch.setattr(export, "download", lambda: None)
+    def forbidden(*a, **k):
+        raise AssertionError("부모 프로세스에서 OPeNDAP 를 열면 안 됨")
+    monkeypatch.setattr(env_atmos.xr, "open_dataset", forbidden)
+    started = []
+    class P:
+        pid = 1
+        def __init__(self, cmd, **k): started.append(cmd)
+        def wait(self, timeout=None): return 0
+    monkeypatch.setattr(subprocess, "Popen", P)
+    export.refresh_sources()
+    assert started and started[0][-1] == "--recent"
+
+
+def test_recent_skips_download_when_nothing_to_fill(monkeypatch):
+    monkeypatch.setattr(env_atmos, "server_last_day", lambda: pd.Timestamp("2026-03-17"))
+    monkeypatch.setattr(env_atmos, "needs_update", lambda s: False)
+    monkeypatch.setattr(env_atmos, "build", lambda **k: pytest.fail("받으면 안 됨"))
+    monkeypatch.setattr("sys.argv", ["env_atmos", "--recent"])
+    env_atmos.main()
+
+
+def test_feed_status_tells_failure_from_quiet(tmp_path, monkeypatch):
+    """피드를 못 받았는지(False), 받았는데 태풍이 없는지(True) 사이트가 구분할 수 있어야 한다."""
+    monkeypatch.setattr(realtime.jma, "XML_DIR", tmp_path)
+    monkeypatch.setattr(realtime, "FEED_OK", None)
+    monkeypatch.setattr(realtime.jma, "fetch_feed", lambda: [])
+    realtime._download_new()
+    assert realtime.FEED_OK is True
+    def down():
+        raise OSError("접속 실패")
+    monkeypatch.setattr(realtime.jma, "fetch_feed", down)
+    with pytest.warns(RuntimeWarning):
+        realtime._download_new()
+    assert realtime.FEED_OK is False
+
+
+def test_forecast_log_failure_does_not_stop_export(monkeypatch):
+    def broken(latest):
+        raise OSError("디스크")
+    monkeypatch.setattr(forecast_log, "append", broken)
+    with pytest.warns(RuntimeWarning, match="예보 기록 실패"):
+        export.log_forecasts({})
+
+
+# ---------------------------------------------------------------- 사이트 자료 일치
+def test_site_lead_file_matches_reports():
+    site = json.loads((ROOT / "docs" / "data" / "kma_lead.json").read_text())
+    rep = json.loads((ROOT / "reports" / "kma_lead.json").read_text())
+    a = json.loads((ROOT / "reports" / "analysis.json").read_text())
+    assert site == rep
+    assert site["our_model_korea_full"]["median_warning_lead_h"] == a["model_warning_lead_full"]["korea"]["median_warning_lead_h"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node 없음")
+def test_site_scripts_parse():
+    for f in ["app.js", "model.js"]:
+        subprocess.run(["node", "--check", str(ROOT / "docs" / f)], check=True)
+
+
 # ---------------------------------------------------------------- 대기 특성
 def test_features_from_uniform_wind():
     glat, glon = np.arange(0, 60.1, 2.5), np.arange(100, 180.1, 2.5)
@@ -68,6 +242,9 @@ def test_approach_center_cone_and_far():
     assert k["center"] is not None and k["cone"] is not None
     assert k["cone"] <= k["center"]                  # 원이 중심보다 먼저 닿음
     assert k["min_km"] < 200
+    assert k["near"] in ("제주", "광주", "부산")      # 가장 가까이 지나는 도시 이름
+    ts = [c["t"] for c in k["cities"]]
+    assert ts and ts == sorted(ts) and ts[0] == k["center"]   # 도시별 진입 시각, 맨 앞이 첫 진입
     far = approach([("2026-09-01T00", 15.0, 150.0, 0), ("2026-09-03T00", 20.0, 160.0, 200)])
     assert far["korea"]["center"] is None and far["korea"]["cone"] is None
     assert far["korea"]["min_km"] > 1000
