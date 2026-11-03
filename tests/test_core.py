@@ -534,3 +534,20 @@ def test_review_actual_turn_and_first_call():
              np.where(hh > 24, 140 - 10 * .7, 140 - 6 * .7 - hh / 6 * .7))
     assert first_call([straight], g, turn) is None
     assert first_call([straight, north], g, turn) == g.time[6]
+
+
+def test_score_sources_same_rules(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    t = pd.date_range("2026-09-01T00", periods=40, freq="6h")
+    df = pd.DataFrame({"SID": "2026244N28128", "time": t, "LAT": np.linspace(30, 45, len(t)), "LON": 128.5})
+    for c in ("korea", "japan"):
+        df[f"in_{c}"] = min_dist(df.LAT.values, df.LON.values, c) <= 200
+    latest = _latest()
+    latest["storms"][0]["forecast"]["points"] = [[24, 31.5, 128.5, 150, 960, 40], [72, 36.0, 128.5, 250, 970, 30]]
+    latest["storms"][0]["forecast_kr"] = {"issued": "2026-09-01T00", "points": [[24, 31.5, 128.5, 30], [72, 36.0, 128.5, 25]],
+                                          "approach": {"korea": {"center": "2026-09-01T20"}, "japan": {"center": None}}}
+    forecast_log.append(latest)
+    s = forecast_log.score_sources(forecast_log._read(), df, df.time.max())
+    assert s["kr"]["issues"] == 1 and s["kr"]["korea"]["hit"] == 1
+    assert s["kr"]["track_error_km"]["24h"]["n"] == 1 and s["kr"]["track_error_km"]["24h"]["mean"] < 10
+    assert s["jma"]["korea"]["hit"] == 1 and s["us"]["issues"] == 0
