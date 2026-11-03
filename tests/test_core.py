@@ -479,3 +479,14 @@ def test_gfs_cycle_uses_only_published_runs():
     assert cycle_for("2026-10-20T06") == pd.Timestamp("2026-10-20T00")
     assert cycle_for("2026-10-20T00") == pd.Timestamp("2026-10-19T12")   # 00시 발표는 아직 공개 전
     assert cycle_for("2026-10-20T18") == pd.Timestamp("2026-10-20T12")
+
+
+def test_log_keeps_own_track(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    latest = _latest()
+    latest["storms"][0]["track_own"] = {"issued": "2026-09-01T00", "cycle": "2026-08-31T12",
+                                        "points": [[24, 32.0, 129.0]], "turn48": 20}
+    assert forecast_log.append(latest) == 1
+    assert forecast_log._read()[0]["own"]["cycle"] == "2026-08-31T12"
+    latest["storms"][0]["track_own"] = dict(latest["storms"][0]["track_own"], cycle="2026-09-01T00")
+    assert forecast_log.append(latest) == 1                 # GFS 새 발표도 새 기록

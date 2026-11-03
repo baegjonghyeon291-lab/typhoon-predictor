@@ -195,6 +195,47 @@ def track_all(df):
     return t
 
 
+# ---------------------------------------------------------------- 실시간 자체 경로
+OWN_H = list(range(12, 121, 12))
+
+
+def own_track(g, sess=None):
+    """활동 중인 태풍(g: 한 태풍의 시점 표, 시간순)의 자체 경로.
+    마지막 관측 시각 t에 공개된 발표를 받아 발표 시각 실제 위치부터 중심을 추적하고,
+    GFS 이동량(지금 → h시간 뒤)을 마지막 관측 위치에 더한다(실험의 'GFS 그대로', 섞는 비율 5~20%는 생략).
+    → {"issued", "cycle", "points": [[h, lat, lon]], "turn48"} 또는 None(발표 없음·추적 실패)."""
+    from .features import bearing
+    last = g.iloc[-1]
+    t, c = last.time, cycle_for(last.time)
+    at_c = g[g.time == c]
+    if at_c.empty:
+        return None
+    if not _path(c).exists() and fetch_cycle(sess or requests.Session(), c) not in ("ok", "cached"):
+        return None
+    tr = track_cycle(np.load(_path(c))["p"], float(at_c.LAT.iloc[0]), float(at_c.LON.iloc[0]) % 360)
+    if len(tr) < 2:
+        return None
+    leads = np.array([x[0] for x in tr], float)
+    la, lo = np.array([x[1] for x in tr]), np.array([x[2] for x in tr])
+    d = (t - c) / pd.Timedelta(hours=1)
+    if d > leads[-1]:
+        return None
+    pos = lambda L: (np.interp(L, leads, la), np.interp(L, leads, lo))     # noqa: E731
+    y0, x0 = pos(d)
+    pts = [[h, round(float(last.LAT + pos(d + h)[0] - y0), 2), round(float(last.LON + pos(d + h)[1] - x0), 2)]
+           for h in OWN_H if d + h <= leads[-1]]
+    if not pts:
+        return None
+    turn = None
+    prev = g[g.time == t - pd.Timedelta(hours=24)]
+    p48 = [q for q in pts if q[0] == 48]
+    if len(prev) and p48:
+        h_now = bearing(prev.LAT.iloc[0], prev.LON.iloc[0], last.LAT, last.LON)
+        h_fut = bearing(last.LAT, last.LON, p48[0][1], p48[0][2])
+        turn = round(float((h_fut - h_now + 180) % 360 - 180))     # +: 시계 방향(오른쪽)으로 꺾임
+    return {"issued": t.strftime("%Y-%m-%dT%H"), "cycle": c.strftime("%Y-%m-%dT%H"), "points": pts, "turn48": turn}
+
+
 # ---------------------------------------------------------------- 특성
 GFS_H = [24, 48, 72, 96, 120]
 

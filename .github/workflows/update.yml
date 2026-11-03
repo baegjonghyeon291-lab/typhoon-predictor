@@ -22,7 +22,9 @@ jobs:
       # GFS 분석장 하루 평균 캐시(data/env/gfs, git에 없음). 매번 새 키로 저장하고 가장 최근 것을 복원
       - uses: actions/cache@v4
         with:
-          path: data/env/gfs
+          path: |
+            data/env/gfs
+            data/env/gfs_fc
           key: gfs-${{ github.run_id }}
           restore-keys: gfs-
       - run: python -m typhoon.export --update

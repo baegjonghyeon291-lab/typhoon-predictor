@@ -78,6 +78,7 @@ const LV = [
 const lvLabel = i => i ? `${i}단계` : LV[0].name;
 const NO_LV = "#14213d";
 const US_LINE = "#0b8a5f";
+const OWN_LINE = "#c8187f";   // 자체 경로(GFS 중심 추적)
 function lvIndex(kt, grade) {
   if (kt != null) return kt < 34 ? 0 : kt < 48 ? 1 : kt < 64 ? 2 : kt < 85 ? 3 : kt < 105 ? 4 : 5;
   return grade === 3 ? 1 : grade === 4 ? 2 : grade === 5 ? 3 : 0;
@@ -127,7 +128,7 @@ function baseMap(id, center = [30, 130], zoom = 4, { forecast = false } = {}) {
     const d = L.DomUtil.create("details", "tc-legend");
     d.open = legendOpen;
     d.innerHTML = `<summary>범례</summary>` + LV.map((l, i) => `<div><i style="background:${l.color}"></i>${i ? `${i}단계 ` : ""}${l.name}</div>`).join("") + `<div><i style="background:${NO_LV}"></i>강도 기록 없음</div>`
-      + (forecast ? `<div class="sep"><i class="lg-line"></i>일본 기상청 예보</div><div><i class="lg-cone"></i>일본 예보 오차 범위(70%)</div><div><i class="lg-line us"></i>미국 JTWC 예보</div>` : "");
+      + (forecast ? `<div class="sep"><i class="lg-line"></i>일본 기상청 예보</div><div><i class="lg-cone"></i>일본 예보 오차 범위(70%)</div><div><i class="lg-line us"></i>미국 JTWC 예보</div><div><i class="lg-line own"></i>자체 경로(GFS 추적)</div>` : "");
     L.DomEvent.disableClickPropagation(d);
     return d;
   };
@@ -355,7 +356,7 @@ function renderNow(latest) {
   const stormBounds = (s, live) => {
     const pts = s.track.map(t => [t[1], t[2]]);
     if (!live) return L.latLngBounds(pts);
-    return L.latLngBounds([...pts, ...[...(s.forecast?.points || []), ...(s.forecast_us?.points || [])].map(p => [p[1], p[2]]), ...KOREA_CITIES, ...JAPAN_CITIES]);
+    return L.latLngBounds([...pts, ...[...(s.forecast?.points || []), ...(s.forecast_us?.points || []), ...(s.track_own?.points || [])].map(p => [p[1], p[2]]), ...KOREA_CITIES, ...JAPAN_CITIES]);
   };
   const scrollToEl = (e, off = document.querySelector(".top").offsetHeight) => window.scrollTo({ top: e.getBoundingClientRect().top + scrollY - off, behavior: REDUCED ? "auto" : "smooth" });
   const toMap = () => { if (!wide()) scrollToEl(mapEl); };
@@ -421,6 +422,7 @@ function renderNow(latest) {
     const agency = (name, fc) => row(`${name}${fc ? `<small>${kst(fc.issued).replace(/^\d+월 /, "")} 발표 · ${Math.max(...fc.points.map(p => p[0]))}h</small>` : ""}`, c => agencyCell(fc, c, s[c]));
     return `<div class="cmp-cap"><span>주요 도시 200km 진입 예측</span><a href="${KMA_URL}" target="_blank" rel="noopener">공식 예보: 기상청</a></div><table class="cmp"><thead><tr><th></th><th scope="col" class="k-t">한국</th><th scope="col" class="j-t">일본</th></tr></thead><tbody>`
       + row("자체 모델<small>5일 내 확률</small>", c => `<td class="self">${s[c].arrived ? `${kst(s[c].arrived)} 진입` : pctCard(s[c].p)}</td>`)
+      + (s.track_own ? row(`자체 경로<small>GFS ${kst(s.track_own.cycle).replace(/^\d+월 /, "")} 발표 추적${s.track_own.turn48 != null ? ` · 48h 방향 ${s.track_own.turn48 > 0 ? "+" : ""}${s.track_own.turn48}°` : ""}</small>`, c => agencyCell(s.track_own, c, s[c])) : "")
       + agency("일본 기상청", s.forecast) + agency("미국 JTWC", s.forecast_us)
       + "</tbody></table>";
   };
@@ -464,6 +466,12 @@ function renderNow(latest) {
         L.polyline(us, { color: US_LINE, weight: 2.5, opacity: .9, dashArray: "8 6", className: cls, interactive: false }).addTo(layer);
         us.slice(1).forEach(c => L.circleMarker(c, { radius: 3.5, color: US_LINE, weight: 2, fillColor: "#fff", fillOpacity: 1, className: cls, interactive: false }).addTo(layer));
         liveBounds.push(...us);
+      }
+      if (s.track_own) {
+        const own = [[last[1], last[2]], ...s.track_own.points.map(p => [p[1], p[2]])];
+        L.polyline(own, { color: OWN_LINE, weight: 2.5, opacity: .9, className: cls, interactive: false }).addTo(layer);
+        own.slice(1).forEach(c => L.circleMarker(c, { radius: 3.5, color: OWN_LINE, weight: 2, fillColor: "#fff", fillOpacity: 1, className: cls, interactive: false }).addTo(layer));
+        liveBounds.push(...own);
       }
       const L1 = LV[idx];
       li.style.animationDelay = `${liveN * 90}ms`;

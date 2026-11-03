@@ -95,6 +95,22 @@ def us_forecast(w):
             "approach": approach(path)}
 
 
+def safe_own_track(g):
+    """GFS 추적 자체 경로(gfs_track.own_track)에 영향권 판정을 붙인다. 실패해도 갱신은 이어 간다."""
+    try:
+        from .gfs_track import own_track
+        o = own_track(g)
+    except Exception as e:  # noqa: BLE001
+        print(f"[gfs_track] 자체 경로 실패: {type(e).__name__}: {e}")
+        return None
+    if not o:
+        return None
+    t0 = pd.Timestamp(o["issued"])
+    last = g.iloc[-1]
+    o["approach"] = approach([(t0, last.LAT, last.LON, 0)] + [(t0 + pd.Timedelta(hours=h), la, lo, 0) for h, la, lo in o["points"]])
+    return o
+
+
 def export_recent(df, models, live=False):
     last_time = df.time.max()
     sids = df[df.time >= last_time - pd.Timedelta(days=RECENT_DAYS)].SID.unique()
@@ -133,6 +149,10 @@ def export_recent(df, models, live=False):
                 s["forecast"] = fc[s["name"].upper()]
             if s["name"].upper() in us:
                 s["forecast_us"] = us_forecast(us[s["name"].upper()])
+            own = safe_own_track(df[df.SID == s["sid"]].sort_values("time"))
+            if own:
+                s["track_own"] = own
+        print(f"[gfs_track] 자체 경로 {sum('track_own' in s for s in storms)}개")
     return {"generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
             "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "us_active": sorted(us), "storms": storms}
 
