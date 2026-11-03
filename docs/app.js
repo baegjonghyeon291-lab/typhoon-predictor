@@ -590,11 +590,14 @@ function renderCompare(stats, kma) {
   const me = lead("korea"), x = full.korea || m.korea, k = kmaF || {};
   const cell = (v, u = "") => has(v) ? v + u : "–";
   const fa = (a.model_false_alarm || {}).korea;
+  const ks = (kma && kma.korea_lead && kma.korea_lead.since_2015_same_as_model && kma.korea_lead.since_2015_same_as_model.scores) || {};
   $("metrics").innerHTML = tableHtml(["2015년~", "자체 모델", "기상청"], [
     ["도달 예측 기준", `확률 ${pct(WARN_P)} 이상`, "예보 경로 200km 진입"],
     ["첫 도달 예측(중앙값)", cell(me.median_warning_lead_h, "시간 전"), cell(k.median_warning_lead_h, "시간 전")],
-    ["빗나간 도달 예측", fa && has(fa.false_alarm_ratio) ? `${pct(fa.false_alarm_ratio)}(${fa.warned_storms}개 중)` : "–", "미집계"],
-    ["진입 시각 오차(평균)", cell(x.arrival_mae_h, "시간"), "미집계"],
+    ["빗나간 도달 예측", fa && has(fa.false_alarm_ratio) ? `${pct(fa.false_alarm_ratio)}(${fa.warned_storms}개 중)` : "–",
+      has(ks.false_alarm_ratio) ? `${pct(ks.false_alarm_ratio)}(${ks.warned_storms}개 중)` : "미집계"],
+    ["진입 시각 오차(평균)", cell(x.arrival_mae_h, "시간"),
+      has(ks.entry_mae_h) ? `${ks.entry_mae_h}시간(진입 예측한 발표 ${ks.entry_issues}건)` : "미집계"],
     ["평가한 태풍 수", cell(me.storms, "개"), cell(k.storms, "개")],
   ]);
 
