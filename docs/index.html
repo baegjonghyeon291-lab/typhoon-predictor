@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>태풍 예측</title>
-<meta name="description" content="서태평양 태풍이 한국·일본에 올 가능성과 시기를 머신러닝으로 추정한 참고용 사이트입니다. 공식 예보가 아닙니다.">
+<meta name="description" content="서태평양 태풍의 한국·일본 도달 확률과 시기를 머신러닝으로 예측하고 기관 예보와 비교합니다. 공식 예보가 아닙니다.">
 <script>document.documentElement.classList.add("js")</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css?v=20261103-4">
+<link rel="stylesheet" href="style.css?v=20261103-19">
 </head>
 <body>
 <header class="top">
@@ -16,9 +16,7 @@
   <nav aria-label="섹션">
     <a href="#now">현재 태풍</a>
     <a href="#history">지난 태풍</a>
-    <a href="#compare">사전 경보</a>
-    <a href="#sim">직접 예측</a>
-    <a href="#stats">통계</a>
+    <a href="#compare">기상청 비교</a>
   </nav>
 </header>
 
@@ -29,44 +27,42 @@
     <div class="panel-top">
       <h1>현재 태풍</h1>
       <span id="asof"></span>
+      <button type="button" id="toMap" class="text-btn">지도 보기</button>
     </div>
     <p id="staleNote" class="stale-note" role="status" hidden></p>
-    <div id="verdict" class="verdict"></div>
-    <p class="official"><b>참고용 예측이며 공식 예보가 아닙니다.</b> <a href="https://www.weather.go.kr/w/typhoon/report.do" target="_blank" rel="noopener">기상청 태풍 정보</a> <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">일본 기상청</a> <button type="button" id="toMap" class="text-btn">지도 보기</button></p>
     <ol id="nowList" class="storm-list"><li class="empty" style="cursor:default;animation:none">불러오는 중…</li></ol>
     <details id="goneBox" class="gone-box" hidden>
       <summary>최근 소멸 <span id="goneN"></span></summary>
       <ol id="goneList" class="gone-list"></ol>
     </details>
-    <div class="notice">
-      <p>확률은 5일 안에 태풍 중심이 영향권(한국 6개·일본 9개 도시에서 200km 안)에 들어올 가능성이에요. 태풍이 멀수록 낮게 나오고 며칠 전에는 놓치는 경우가 많아, 낮아도 안전하다는 뜻은 아니에요. 20% 미만이면 도착 시간은 표시하지 않아요.</p>
-      <p class="links"><a href="#reliability" id="relLink" hidden>이 확률은 얼마나 믿을 수 있나요?</a></p>
-    </div>
   </aside>
 </section>
 
 <section id="history">
   <div class="wrap">
     <div class="sec-head"><h2>지난 태풍</h2></div>
-    <p class="sec-sub">2015년 이후 한국에 영향을 준 태풍에서 모델이 언제 무엇을 말했는지 돌려 봅니다. 이 기간은 학습에 쓰지 않았어요.</p>
-    <div class="hist-find">
-      <input id="histQ" type="search" placeholder="이름이나 연도로 찾기" aria-label="태풍 찾기">
-      <span id="histCount"></span>
+    <div class="hist-filter">
+      <select id="histYear" aria-label="연도"></select>
+      <div id="histLv" class="seg" role="group" aria-label="단계"></div>
+      <div id="histSort" class="seg" role="group" aria-label="정렬"></div>
     </div>
-    <div class="hist-bar">
-      <select id="histSel" aria-label="태풍 선택"></select>
-      <button id="play" type="button" aria-label="재생">▶</button>
-      <input id="scrub" type="range" min="0" max="0" value="0" aria-label="시각">
-      <span id="scrubTime" aria-live="off"></span>
-    </div>
-    <p id="histSummary" class="hist-summary"></p>
-    <div class="hist-grid">
-      <div id="histMap" class="map" role="region" aria-label="지난 태풍 경로 지도"></div>
-      <div class="chart-box">
-        <h3>그때 모델이 말한 5일 안 도달 확률</h3>
-        <p class="chart-sub">빨간 점선이 한국 도착, 파란 세로선이 지금 보는 시점이에요. 그래프를 누르면 그 시점으로 이동해요.</p>
-        <div class="chart-wrap"><canvas id="histChart"></canvas></div>
-        <details class="rel-table"><summary>표로 보기</summary><div id="histTable"></div></details>
+    <div class="hist-layout">
+      <ol id="histList" class="hist-list"></ol>
+      <div class="hist-main">
+        <div class="hist-bar">
+          <button id="play" type="button" aria-label="재생">▶</button>
+          <input id="scrub" type="range" min="0" max="0" value="0" aria-label="시각">
+          <span id="scrubTime" aria-live="off"></span>
+        </div>
+        <p id="histSummary" class="hist-summary"></p>
+        <div class="hist-grid">
+          <div id="histMap" class="map" role="region" aria-label="지난 태풍 경로 지도"></div>
+          <div class="chart-box">
+            <h3>5일 내 도달 확률</h3>
+            <div class="chart-wrap"><canvas id="histChart"></canvas></div>
+            <details class="rel-table"><summary>표로 보기</summary><div id="histTable"></div></details>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -74,82 +70,28 @@
 
 <section id="compare">
   <div class="wrap">
-    <div class="sec-head"><h2>얼마나 미리 알 수 있나</h2></div>
-    <div class="cmp-vis" id="cmpVis"></div>
+    <div class="sec-head"><h2>자체 모델 vs 기상청</h2></div>
     <div class="article cmp-b">
       <div class="chart-box tall">
-        <h3>도착 전 경보 비율</h3>
-        <p class="chart-sub">태풍이 오기 N시간 전까지 경보(모델 확률 40% 이상)를 낸 태풍의 비율이에요. 높을수록 일찍 알립니다.</p>
+        <h3>한국 200km 진입 전 도달 예측 비율</h3>
         <div class="chart-wrap"><canvas id="leadChart"></canvas></div>
         <details class="rel-table"><summary>표로 보기</summary><div id="leadTable"></div></details>
       </div>
       <div class="side-col">
+        <div id="metrics"></div>
         <div id="factors"></div>
-        <details class="expert">
-          <summary>전문가용 성능 지표</summary>
-          <div id="metrics"></div>
-          <p id="metricsNote"></p>
-        </details>
       </div>
-    </div>
-  </div>
-</section>
-
-<section id="sim">
-  <div class="wrap">
-    <div class="sec-head"><h2>직접 예측</h2></div>
-    <div class="sim-grid">
-      <div id="simMap" class="map" role="region" aria-label="가상 태풍 위치 지도. 누르면 위치가 바뀝니다"></div>
-      <div class="sim-panel">
-        <div class="readout two" aria-live="polite">
-          <div class="ro korea"><span class="k">한국</span><b id="simK">–</b><i class="bar"><u id="simKbar"></u></i><em id="simKeta"></em></div>
-          <div class="ro japan"><span class="k">일본</span><b id="simJ">–</b><i class="bar"><u id="simJbar"></u></i><em id="simJeta"></em></div>
-          <ul id="simWarn" class="warn-list" hidden></ul>
-        </div>
-        <p class="pos" id="simPos">불러오는 중…</p>
-        <p class="sim-note">지도를 눌러 위치를 정하고 값을 바꿔 보세요. 과거 태풍 자료로 만든 통계 추정이라 실제 경로 예보가 아니고, 같은 위치도 계절에 따라 크게 달라져요.</p>
-        <form id="simForm" class="sliders">
-          <label>날짜<input type="date" name="date"></label>
-          <label>최대풍속 <span><output></output>kt</span><input type="range" name="wind" aria-label="최대풍속" min="20" max="140" step="5" value="65"></label>
-          <label>중심기압 <span><output></output>hPa</span><input type="range" name="pres" aria-label="중심기압" min="900" max="1008" step="1" value="970"></label>
-          <label><span class="lb">진행 방향 <small>0° 북, 90° 동</small></span> <span><output></output>°</span><input type="range" name="heading" aria-label="진행 방향" min="0" max="359" step="5" value="330"></label>
-          <label>이동 속도 <span><output></output>km/h</span><input type="range" name="speed" aria-label="이동 속도" min="0" max="60" step="1" value="20"></label>
-          <label>발생 후 <span><output></output>일</span><input type="range" name="age" aria-label="발생 후 일수" min="0" max="15" step="0.5" value="4"></label>
-          <label>하루 풍속 변화 <span><output></output>kt</span><input type="range" name="dwind" aria-label="하루 풍속 변화" min="-40" max="40" step="5" value="0"></label>
-        </form>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="stats">
-  <div class="wrap">
-    <div class="sec-head"><h2>통계</h2></div>
-    <div class="stats-grid">
-      <div id="monthBox"><h3>영향 태풍 수, 월별</h3><div id="monthList"></div></div>
-      <div class="chart-box"><h3>영향 태풍 수, 연도별</h3><div class="chart-wrap"><canvas id="yearChart"></canvas></div>
-        <details class="rel-table"><summary>표로 보기</summary><div id="yearTable"></div></details></div>
-    </div>
-    <div class="rel-box" id="reliability" hidden>
-      <div class="chart-box">
-        <h3>확률은 믿을 만한가</h3>
-        <p class="rel-lead" id="relLead"></p>
-        <p class="rel-sub">모델이 말한 확률(가로)과 실제로 5일 안에 영향권에 들어온 비율(세로)이에요. 점선에 가까울수록 말한 확률이 실제와 같아요. 2015년 이후 자료 기준입니다.</p>
-        <div class="chart-wrap"><canvas id="relChart"></canvas></div>
-      </div>
-      <details class="rel-table"><summary>표로 보기</summary><div id="relTable"></div></details>
     </div>
   </div>
 </section>
 </main>
 <footer class="foot">
-  <p><b>참고용 머신러닝 예측이며 공식 예보가 아닙니다.</b> 공식 정보: <a href="https://www.weather.go.kr/w/typhoon/report.do" target="_blank" rel="noopener">기상청 태풍 정보</a> · <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">일본 기상청</a></p>
-  <p>자료 출처: <a href="https://www.ncei.noaa.gov/products/international-best-track-archive" target="_blank" rel="noopener">IBTrACS</a> · <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">気象庁(일본 기상청)</a> · <a href="https://apihub.kma.go.kr/" target="_blank" rel="noopener">기상청 API허브</a> · <a href="https://registry.opendata.aws/noaa-gfs-bdp-pds/" target="_blank" rel="noopener">NOAA GFS</a> · <a href="https://psl.noaa.gov/data/gridded/data.ncep.reanalysis.html" target="_blank" rel="noopener">NOAA NCEP 재분석</a></p>
+  <p><b>자체 모델 예측이며 공식 예보가 아닙니다.</b> 공식 예보: <a href="https://www.weather.go.kr/w/typhoon/report.do" target="_blank" rel="noopener">기상청</a> · <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">일본 기상청</a></p>
+  <p>자료 출처: <a href="https://www.ncei.noaa.gov/products/international-best-track-archive" target="_blank" rel="noopener">IBTrACS</a> · <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">気象庁(일본 기상청)</a> · <a href="https://www.metoc.navy.mil/jtwc/jtwc.html" target="_blank" rel="noopener">JTWC(미국)</a> · <a href="https://apihub.kma.go.kr/" target="_blank" rel="noopener">기상청 API허브</a> · <a href="https://registry.opendata.aws/noaa-gfs-bdp-pds/" target="_blank" rel="noopener">NOAA GFS</a> · <a href="https://psl.noaa.gov/data/gridded/data.ncep.reanalysis.html" target="_blank" rel="noopener">NOAA NCEP 재분석</a> · <a href="https://www.water.or.kr/kor/menu/sub.do?menuId=16_166_168_268" target="_blank" rel="noopener">재산피해: 2023 재해연보(행정안전부)</a></p>
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="model.js?v=20261103-4"></script>
-<script src="app.js?v=20261103-4"></script>
+<script src="app.js?v=20261103-19"></script>
 </body>
 </html>

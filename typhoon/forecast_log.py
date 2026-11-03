@@ -1,7 +1,7 @@
 """예보 진로 접근 판정 기록과 검증.
 
 일본 기상청 5일 예보 전문은 피드에 최근 7일치만 있어 과거 판정을 다시 만들 수 없다. 그래서 자동 갱신 때마다
-현재 태풍의 예보 진로·영향권 접근 판정(export.approach)·같은 시점의 모델 확률을 data/forecast_log.jsonl 에
+현재 태풍의 일본·미국 예보 진로와 영향권 접근 판정(export.approach), 같은 시점의 모델 확률·근거·입력값을 data/forecast_log.jsonl 에
 한 줄씩 쌓는다(같은 태풍·같은 발표는 한 번만). 태풍이 끝난 뒤 실제 영향권 도착과 맞춰 본다.
 
     python -m typhoon.forecast_log           # 기록된 판정 검증 → reports/forecast_log_check.json
@@ -47,7 +47,8 @@ def append(latest):
         new.append({"logged": latest["generated"], "sid": s["sid"], "name": s["name"], "issued": fc["issued"],
                     "position": {"time": last[0], "lat": last[1], "lon": last[2]},
                     "points": fc["points"], "approach": fc["approach"], "env": s.get("env"),
-                    "model": {c: s[c] for c in COUNTRIES if c in s}})
+                    "model": {c: s[c] for c in COUNTRIES if c in s},   # 확률·도착 시간과 근거(why)
+                    "inputs": s.get("inputs"), "us": s.get("forecast_us")})
         seen.add(key)
     if new:
         LOG.parent.mkdir(parents=True, exist_ok=True)
