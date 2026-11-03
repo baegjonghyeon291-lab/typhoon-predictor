@@ -1,7 +1,7 @@
 """예보 진로 접근 판정 기록과 검증.
 
 일본 기상청 5일 예보 전문은 피드에 최근 7일치만 있어 과거 판정을 다시 만들 수 없다. 그래서 자동 갱신 때마다
-현재 태풍의 예보 진로·영향권 접근 판정(export.approach)·같은 시점의 모델 확률을 data/forecast_log.jsonl 에
+현재 태풍의 일본·미국 예보 진로와 영향권 접근 판정(export.approach), 같은 시점의 모델 확률·근거·입력값을 data/forecast_log.jsonl 에
 한 줄씩 쌓는다(같은 태풍·같은 발표는 한 번만). 태풍이 끝난 뒤 실제 영향권 도착과 맞춰 본다.
 
     python -m typhoon.forecast_log           # 기록된 판정 검증 → reports/forecast_log_check.json
@@ -34,20 +34,22 @@ def _read():
 
 def append(latest):
     """export_recent 결과(latest.json 객체)에서 활동 중이고 예보가 있는 태풍을 기록. 새로 쓴 줄 수 반환."""
-    seen = {(r.get("sid"), r.get("name"), r.get("issued")) for r in _read()}
+    seen = {(r.get("sid"), r.get("name"), r.get("issued"), (r.get("us") or {}).get("issued")) for r in _read()}
     new = []
     for s in latest.get("storms", []):
-        fc = s.get("forecast")
-        if s.get("end") != latest.get("data_until") or not fc or "approach" not in fc:
+        fc, us = s.get("forecast"), s.get("forecast_us")
+        fc = fc if fc and "approach" in fc else {}        # 일본·미국 중 하나만 있어도, 어느 쪽이든 새 발표면 남긴다
+        if s.get("end") != latest.get("data_until") or not (fc or us):
             continue
-        key = (s["sid"], s["name"], fc["issued"])
+        key = (s["sid"], s["name"], fc.get("issued"), (us or {}).get("issued"))
         if key in seen:
             continue
         last = s["track"][-1]
-        new.append({"logged": latest["generated"], "sid": s["sid"], "name": s["name"], "issued": fc["issued"],
+        new.append({"logged": latest["generated"], "sid": s["sid"], "name": s["name"], "issued": fc.get("issued"),
                     "position": {"time": last[0], "lat": last[1], "lon": last[2]},
-                    "points": fc["points"], "approach": fc["approach"], "env": s.get("env"),
-                    "model": {c: s[c] for c in COUNTRIES if c in s}})
+                    "points": fc.get("points"), "approach": fc.get("approach"), "env": s.get("env"),
+                    "model": {c: s[c] for c in COUNTRIES if c in s},   # 확률·도착 시간과 근거(why)
+                    "inputs": s.get("inputs"), "us": us})
         seen.add(key)
     if new:
         LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -84,8 +86,12 @@ def check(df=None, refresh=True):
         df = load()
     data_end = df.time.max()
     rows = _read()
-    out = []
+    judged = {}                   # 미국 예보만 바뀐 줄은 같은 일본 발표이므로 한 번만 채점한다
     for r in rows:
+        if r.get("approach"):
+            judged.setdefault((r["sid"], r["issued"]), r)
+    out = []
+    for r in judged.values():
         sid = _resolve(r, df)
         if sid is None:
             continue

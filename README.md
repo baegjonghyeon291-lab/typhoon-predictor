@@ -4,7 +4,7 @@
 
 사이트: https://baegjonghyeon291-lab.github.io/typhoon-predictor/
 
-머신러닝 기반 태풍 예측 프로그램. 1951년 이후 서태평양 태풍 경로 전체를 학습해 지금 태풍이 한국(또는 일본)에 언제 올지 예측하고, 한국이 일본보다 태풍 예측이 늦는 이유를 데이터로 분석한다.
+직접 학습한 머신러닝 자체 모델로 태풍을 예측하고, 이를 기준으로 한·미·일 기관 예보와 비교해 왜 다른지 결과로 배우는 프로젝트. 1951년 이후 서태평양 태풍 경로 전체를 학습해 지금 태풍이 한국(또는 일본)에 언제 올지 예측한다.
 
 ## 데이터
 
@@ -28,12 +28,17 @@
 
 영향권 기준: 한국은 서울·부산·광주·제주·강릉·대전, 일본은 후쿠오카·가고시마·오사카·도쿄·센다이·삿포로·나하·고치·니가타 중 한 곳에서 200km 안에 태풍 중심이 들어온 경우.
 
+### 기관 예보
+
+- 일본 기상청 5일 예보, 미국 JTWC 경보 전문: 키 없이 받는다. 지금 활동 중이거나 최근 7일 것만 있어 `data/forecast_log.jsonl`에 쌓는다.
+- 기상청 예보 이력: `KMA_APIHUB_KEY` 필요.
+
 ## 모델
 
 - 입력: 6시간 단위 태풍 상태(위치, 풍속, 기압, 6·24시간 이동량, 속도, 진행 방향, 발생 후 경과 시간, 날짜, 서울·도쿄까지 거리와 방위)
 - 출력 1: 120시간 안에 영향권에 들어올 확률 (HistGradientBoostingClassifier)
 - 출력 2: 들어온다면 남은 시간 (HistGradientBoostingRegressor)
-- 모델 두 가지: 경로 특성만 쓰는 모델(사이트의 직접 예측용)과 대기·해양 환경 특성까지 쓰는 환경 모델(실제 태풍 예측용)
+- 모델 두 가지: 경로 특성만 쓰는 모델(환경 자료가 없을 때 대체)과 대기 환경 특성까지 쓰는 환경 모델(기본)
 - 학습 1951–2014, 검증 2015–현재 (태풍 단위로 기간을 나눠 정보 누출 없음)
 
 | | AUC | 도착 시간 오차(평균) | 검증 태풍 수(영향) |
@@ -87,8 +92,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m typhoon.predict --update   # 최신 데이터 받아 가장 최근 태풍 예측
 .venv/bin/python -m typhoon.predict --sid 2026288N10161
 .venv/bin/python -m typhoon.export --update     # 사이트 데이터 갱신 → docs/data/
+.venv/bin/python -m typhoon.track      # 경로·전향 모델 실험 → reports/track_experiment.txt
 ```
 
 ## 웹사이트
 
-`docs/` 폴더가 GitHub Pages로 배포된다. 학습한 트리 모델을 `docs/data/model.json`으로 내보내 브라우저에서 직접 계산하므로(파이썬 결과와 동일) 지도에서 위치를 찍고 조건을 바꾸면 바로 예측된다.
+`docs/` 폴더가 GitHub Pages로 배포된다. 화면은 현재 태풍, 지난 태풍, 자체 모델 vs 기상청 세 가지다.

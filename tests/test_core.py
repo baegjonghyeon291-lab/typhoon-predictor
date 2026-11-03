@@ -7,10 +7,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from typhoon import env_atmos, env_gfs, export, features, forecast_log, realtime
+from typhoon import env_atmos, env_gfs, explain, export, features, forecast_log, realtime
 from typhoon.data import ROOT, haversine, min_dist
 from typhoon.env_atmos import features_from
 from typhoon.export import approach
+from typhoon.sources import jtwc
 from typhoon.features import FEATURES, SEOUL, TOKYO, bearing, load_model, predict, predict_range, prob
 
 
@@ -211,9 +212,24 @@ def test_site_lead_file_matches_reports():
     assert site["our_model_korea_full"]["median_warning_lead_h"] == a["model_warning_lead_full"]["korea"]["median_warning_lead_h"]
 
 
+def test_near_storms_named_within_limit():
+    df = pd.DataFrame({"SID": ["a", "a", "b", "c", "d"], "SEASON": [2025, 2025, 2025, 2025, 2014],
+                       "NAME": ["LINGLING", "LINGLING", "UNNAMED", "NAKRI", "OLD"],
+                       "dist_korea": [800.0, 291.0, 20.0, 698.0, 100.0]})
+    assert list(export.near_storms(df)) == ["a"]
+
+
+def test_damage_file_matches_history():
+    site = ROOT / "docs" / "data"
+    damage = json.loads((site / "damage.json").read_text())["storms"]
+    sids = {s["sid"] for s in json.loads((site / "history.json").read_text())}
+    assert set(damage) <= sids
+    assert all(v["won"] > 0 for v in damage.values())
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node 없음")
 def test_site_scripts_parse():
-    for f in ["app.js", "model.js"]:
+    for f in ["app.js"]:
         subprocess.run(["node", "--check", str(ROOT / "docs" / f)], check=True)
 
 
@@ -328,22 +344,114 @@ def test_predict_ignores_index_labels():
     assert np.allclose(p, p2) and np.allclose(h, h2)
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node 없음")
-@pytest.mark.parametrize("country", ["korea", "japan"])
-def test_browser_model_matches_python(country, tmp_path):
-    """사이트(docs/model.js + docs/data/model.json)와 파이썬 경로 모델 결과가 같아야 한다.
-    모델을 바꾸고 export_models()로 model.json 을 다시 만들지 않으면 여기서 걸린다."""
-    m = load_model(country, full=False)
-    X = _rows(12, seed=1)
-    py = np.c_[prob(m, X), m["reg"].predict(X), *predict_range(country, X)]
-    f = tmp_path / "rows.json"
-    f.write_text(json.dumps(X.to_dict("records")))
-    js = (f"const {{predict}} = require({json.dumps(str(ROOT / 'docs' / 'model.js'))});"
-          f"const M = require({json.dumps(str(ROOT / 'docs' / 'data' / 'model.json'))});"
-          f"const rows = require({json.dumps(str(f))});"
-          f"console.log(JSON.stringify(rows.map(r => {{ const q = predict(M, '{country}', r);"
-          f" return [q.p, q.hours, q.lo, q.hi]; }})));")
-    out = subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout
-    js = np.array(json.loads(out))
-    assert np.allclose(js[:, 0], py[:, 0], atol=1e-6)            # 확률(잎 값 7자리 반올림 오차)
-    assert np.allclose(js[:, 1:], py[:, 1:], atol=1e-3)          # 시간
+# ---------------------------------------------------------------- 예측 근거
+def test_group_shap_adds_up_to_tree_score():
+    m = load_model("korea", full=False)
+    X = _rows(6, seed=2)
+    groups, base = explain.group_values(m, FEATURES, X)
+    assert np.allclose(base + groups.sum(axis=1).to_numpy(), m["clf"].decision_function(X), atol=1e-6)
+    assert "계절" in groups and "상공 바람" not in groups   # 경로 모델에는 상공 특성이 없다
+
+
+def test_contributions_shape_and_failure_is_safe(monkeypatch):
+    out = explain.contributions("korea", _rows(4, seed=3))
+    assert len(out) == 4 and all(len(r) <= explain.TOP_N for r in out)
+    assert all(abs(v) >= explain.MIN_PP for r in out for _, v in r)
+
+    def broken(*a):
+        raise ValueError("x")
+    monkeypatch.setattr(explain, "contributions", broken)
+    with pytest.warns(RuntimeWarning, match="근거 계산 실패"):
+        assert explain.safe_contributions("korea", _rows(2)) == [[], []]
+
+
+# ---------------------------------------------------------------- JTWC
+WARNING = """WTPN31 PGTW 310300
+SUBJ/TYPHOON 30W (IN-FA) WARNING NR 043//
+   WARNING POSITION:
+   310000Z --- NEAR 23.1N 139.3E
+   PRESENT WIND DISTRIBUTION:
+   MAX SUSTAINED WINDS - 070 KT, GUSTS 085 KT
+   FORECASTS:
+   12 HRS, VALID AT:
+   311200Z --- 23.5N 138.7E
+   MAX SUSTAINED WINDS - 075 KT, GUSTS 090 KT
+   24 HRS, VALID AT:
+   010000Z --- 24.4N 170.0W
+   MAX SUSTAINED WINDS - 065 KT, GUSTS 080 KT
+"""
+
+
+def test_jtwc_parse_warning():
+    import datetime as dt
+    w = jtwc.parse_warning(WARNING, now=dt.datetime(2026, 11, 1, 5))    # 다음 달 초에 받아도 지난달 31일로
+    assert w["name"] == "IN-FA" and w["number"] == "30W" and w["wind"] == 70
+    assert w["time"] == dt.datetime(2026, 10, 31, 0) and w["issued"] == dt.datetime(2026, 10, 31, 3)
+    assert w["points"] == [[12, 23.5, 138.7, 75], [24, 24.4, 190.0, 65]]
+    assert jtwc.parse_warning("다른 형식") is None
+    f = export.us_forecast(w)
+    assert f["issued"] == "2026-10-31T03" and f["approach"]["korea"]["cone"] is None
+
+
+def test_log_keeps_inputs_and_us_forecast(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    track = [["2026-08-01T00", 25.0, 130.0, 60, 980, 0.1, 0.2]]
+    latest = {"generated": "2026-08-01T05:00", "data_until": "2026-08-01T00", "storms": [{
+        "sid": "s", "name": "X", "end": "2026-08-01T00", "track": track, "korea": {"p": .1, "why": [["계절", 3]]},
+        "japan": {"p": .2}, "inputs": {"LAT": 25.0}, "forecast_us": {"issued": "2026-08-01T00", "points": []},
+        "forecast": {"issued": "2026-08-01T00", "points": [], "approach": {}}}]}
+    assert forecast_log.append(latest) == 1
+    r = json.loads(forecast_log.LOG.read_text())
+    assert r["inputs"] == {"LAT": 25.0} and r["us"]["issued"] == "2026-08-01T00"
+    assert r["model"]["korea"]["why"] == [["계절", 3]]
+
+
+def test_log_keeps_us_forecast_without_new_japan_issue(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    track = [["2026-08-01T00", 25.0, 130.0, 60, 980, 0.1, 0.2]]
+
+    def latest(jma, us):
+        s = {"sid": "s", "name": "X", "end": "2026-08-01T00", "track": track, "korea": {"p": .1}, "japan": {"p": .2}}
+        if jma:
+            s["forecast"] = {"issued": jma, "points": [], "approach": {}}
+        if us:
+            s["forecast_us"] = {"issued": us, "points": []}
+        return {"generated": "2026-08-01T05:00", "data_until": "2026-08-01T00", "storms": [s]}
+    assert forecast_log.append(latest(None, "2026-08-01T03")) == 1      # 일본 예보가 없어도 남긴다
+    assert forecast_log.append(latest("2026-08-01T00", "2026-08-01T03")) == 1
+    assert forecast_log.append(latest("2026-08-01T00", "2026-08-01T09")) == 1   # 미국 예보만 새로 나옴
+    assert forecast_log.append(latest("2026-08-01T00", "2026-08-01T09")) == 0
+
+
+def test_still_active():
+    import datetime as dt
+    now = dt.datetime(2026, 8, 2, 0)
+    assert export.still_active(pd.DataFrame({"time": pd.to_datetime(["2026-08-01T12"])}), now)
+    assert not export.still_active(pd.DataFrame({"time": pd.to_datetime(["2026-07-30T12"])}), now)
+
+
+def test_false_alarm(monkeypatch):
+    from typhoon import analyze
+    t = pd.to_datetime(["2020-08-01T00", "2020-08-02T00", "2020-08-01T00", "2020-08-01T00"])
+    df = pd.DataFrame({"SID": ["hit", "hit", "miss", "quiet"], "SEASON": 2020, "time": t,
+                       "in_korea": [False, True, False, False]})
+    monkeypatch.setattr(analyze, "predict", lambda c, d: (np.where(d.SID == "quiet", .1, .9), None))
+    assert analyze.false_alarm(df, "korea") == {"warned_storms": 2, "false_alarm_ratio": .5}
+
+
+# ---------------------------------------------------------------- 경로·전향
+def test_track_future_and_turn():
+    from typhoon import track
+    assert track.angle_diff(350.0, 10.0) == 20
+    t = pd.date_range("2020-08-01", periods=17, freq="6h")
+    lat = [10 + .5 * max(0, i - 8) * 2 for i in range(17)]        # 서진하다 2일 뒤부터 북상
+    lon = [140 - .5 * min(i, 8) for i in range(17)]
+    d = pd.DataFrame({"SID": "a", "time": t, "LAT": lat, "LON": lon})
+    d["dlat_24"], d["dlon_24"] = d.LAT - d.LAT.shift(4), d.LON - d.LON.shift(4)
+    d["dlat_6"], d["dlon_6"] = d.LAT - d.LAT.shift(1), d.LON - d.LON.shift(1)
+    f = track.add_future(d, 24)
+    assert f.dx.iloc[0] == pytest.approx(-2.0) and f.dy.iloc[-1] != f.dy.iloc[-1]    # 끝 시점은 정답 없음
+    py, px = track.persistence(d.iloc[[4]], 24)
+    assert px[0] == pytest.approx(-2.0) and py[0] == 0
+    turn = track.turn_table(d)
+    assert turn.turn.iloc[0] == 1      # 서진 중 앞으로 북쪽으로 꺾임

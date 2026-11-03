@@ -53,6 +53,16 @@
       "warned_120h_before": 0.176
     }
   },
+  "model_false_alarm": {
+    "korea": {
+      "warned_storms": 52,
+      "false_alarm_ratio": 0.481
+    },
+    "japan": {
+      "warned_storms": 126,
+      "false_alarm_ratio": 0.357
+    }
+  },
   "agency_tracking_start": {
     "storms": 278,
     "median_kma_minus_jma_h": 12.0,

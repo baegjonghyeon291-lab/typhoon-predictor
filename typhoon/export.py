@@ -1,48 +1,25 @@
-"""웹사이트(docs/)용 JSON 생성: 모델, 최근 태풍 예측, 지난 태풍 기록, 통계."""
+"""웹사이트(docs/)용 JSON 생성: 최근 태풍 예측, 지난 태풍 기록, 모델 지표."""
 import argparse
 import json
 from datetime import datetime, timezone
 
-import joblib
 import numpy as np
 import pandas as pd
 
 from .data import load, download, haversine, ROOT, CITIES, CITY_NAMES, RADIUS_KM
 from . import realtime
-from .features import add_features, add_targets, add_env, predict, predict_range, FEATURES
+from .explain import safe_contributions
+from .features import add_features, add_env, predict, predict_range, ENV_FEATURES, FEATURES
 from .train import SPLIT_YEAR
 
 OUT = ROOT / "docs" / "data"
 RECENT_DAYS = 21
+NEAR_KM = 300          # 지난 태풍 목록 기준. 모델의 영향권(RADIUS_KM)과 별개
+ACTIVE_H = 18          # 마지막 관측이 이 안이면 아직 활동 중으로 본다(사이트 QUIET_H 와 같은 값)
 
 
 def num(v, d=2):
     return None if pd.isna(v) else round(float(v), d)
-
-
-def tree_json(model):
-    trees = []
-    for it in model._predictors:
-        nodes = []
-        for n in it[0].nodes:
-            if n["is_leaf"]:
-                # 잎 값은 7자리로(파일 35% 감소, 결과 차이 1e-6 수준). 분기 기준값은 자료값과 맞물려 있어 줄이면 안 됨
-                nodes.append([float(f"{n['value']:.7g}")])
-            else:
-                nodes.append([int(n["feature_idx"]), min(float(n["num_threshold"]), 1e300),
-                              int(n["missing_go_to_left"]), int(n["left"]), int(n["right"])])
-        trees.append(nodes)
-    return {"base": float(np.ravel(model._baseline_prediction)[0]), "trees": trees}
-
-
-def export_models():
-    out = {"features": FEATURES}
-    for c in ["korea", "japan"]:
-        m = joblib.load(ROOT / "models" / f"{c}.joblib")
-        out[c] = {"clf": tree_json(m["clf"]), "reg": tree_json(m["reg"]), "calib": m.get("calib")}
-        if "lo" in m:                                   # 남은 시간 80% 범위(features.predict_range)
-            out[c].update(lo=tree_json(m["lo"]), hi=tree_json(m["hi"]), delta=m["delta"])
-    (OUT / "model.json").write_text(json.dumps(out, separators=(",", ":")))
 
 
 def predict_rows(d, models):
@@ -110,6 +87,14 @@ def latest_forecasts():
     return out
 
 
+def us_forecast(w):
+    """JTWC 예보(sources.jtwc.latest)를 사이트 형식으로. 영향권 판정은 일본 예보와 같은 계산, 오차 범위는 없다."""
+    path = [(w["time"], w["lat"], w["lon"], 0)]
+    path += [(w["time"] + pd.Timedelta(hours=h), la, lo, 0) for h, la, lo, _ in w["points"]]
+    return {"issued": w["issued"].strftime("%Y-%m-%dT%H"), "number": w["number"], "wind": w["wind"], "points": w["points"],
+            "approach": approach(path)}
+
+
 def export_recent(df, models, live=False):
     last_time = df.time.max()
     sids = df[df.time >= last_time - pd.Timedelta(days=RECENT_DAYS)].SID.unique()
@@ -130,60 +115,71 @@ def export_recent(df, models, live=False):
                 if not pd.isna(last[f"lo_{c}"]):          # 남은 시간 범위(목표 80%, 검증 포함 비율 74~79%)
                     h = last[f"h_{c}"]                    # 표시용: 범위가 점 예측을 늘 감싸게
                     s[c]["range"] = [num(max(min(last[f"lo_{c}"], h), 0), 0), num(max(last[f"hi_{c}"], h), 0)]
+                if live and last.time == last_time:       # 활동 중인 태풍만 근거 계산(기록에도 함께 남는다)
+                    s[c]["why"] = safe_contributions(c, g.iloc[[-1]])[0]
+        if live and last.time == last_time:
+            s["inputs"] = {k: num(last[k], 3) for k in [*FEATURES, *ENV_FEATURES] if k in g}
         storms.append(s)
     storms.sort(key=lambda s: s["end"], reverse=True)
+    from .sources import jtwc
+    us = jtwc.latest()         # 실시간 자료가 끊겨도 활동 중인 태풍을 확인할 수 있게 항상 받는다
+    print(f"[jtwc] 활동 중 예보 {len(us)}개")
     if live:
         fc = latest_forecasts()
         for s in storms:
-            if s["end"] == last_time.strftime("%Y-%m-%dT%H") and s["name"].upper() in fc:
+            if s["end"] != last_time.strftime("%Y-%m-%dT%H"):
+                continue
+            if s["name"].upper() in fc:
                 s["forecast"] = fc[s["name"].upper()]
+            if s["name"].upper() in us:
+                s["forecast_us"] = us_forecast(us[s["name"].upper()])
     return {"generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
-            "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "storms": storms}
+            "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "us_active": sorted(us), "storms": storms}
+
+
+def still_active(full, now=None):
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    return full.time.max() >= now - pd.Timedelta(hours=ACTIVE_H)
+
+
+def near_storms(df):
+    """검증 기간(학습에 안 쓴 2015년~) 중 한국 도시에 NEAR_KM 안으로 접근한 이름 붙은 태풍."""
+    d = df[(df.SEASON >= SPLIT_YEAR) & ~df.NAME.isin(["UNNAMED", "NOT_NAMED"])]
+    closest = d.groupby("SID").dist_korea.min()
+    return closest[closest <= NEAR_KM].index
 
 
 def export_history(df, models):
-    """검증 기간(학습에 안 쓴 2015년~) 중 한국 영향 태풍: 시점별 모델 확률과 실제 도착."""
-    d = add_targets(df[df.SEASON >= SPLIT_YEAR], "korea")
-    hits = d[d.arrival.notna()].SID.unique()
+    """지난 태풍: 시점별 모델 확률, 한국 영향권 도착(없으면 null), 최근접 시각과 거리."""
     out = []
-    for sid in hits:
+    for sid in near_storms(df):
         full = df[df.SID == sid]
         g = predict_rows(full, models)
         arrival = full[full.in_korea].time.min()
         japan = full[full.in_japan].time.min()
-        g = g[g.time <= arrival + pd.Timedelta(hours=48)]
+        if pd.isna(arrival) and still_active(full):    # 아직 접근 중일 수 있어 결과를 말할 수 없다
+            continue
+        close = full.loc[full.dist_korea.idxmin()]
+        ref = close.time if pd.isna(arrival) else arrival
+        g = g[g.time <= ref + pd.Timedelta(hours=48)]
+        before = g[g.time < ref]
+        peak = None
+        if len(before):                                # 도착(최근접) 전 가장 높았던 확률과 그 근거
+            top = before.loc[[before.p_korea.idxmax()]]
+            peak = {"t": top.time.iloc[0].strftime("%Y-%m-%dT%H"), "p": num(top.p_korea.iloc[0], 3),
+                    "why": safe_contributions("korea", top)[0]}
         out.append({"sid": sid, "name": str(full.NAME.iloc[0]), "season": int(full.SEASON.iloc[0]),
-                    "arrival": arrival.strftime("%Y-%m-%dT%H"), "arrival_japan": None if pd.isna(japan) else japan.strftime("%Y-%m-%dT%H"),
+                    "arrival": None if pd.isna(arrival) else arrival.strftime("%Y-%m-%dT%H"),
+                    "arrival_japan": None if pd.isna(japan) else japan.strftime("%Y-%m-%dT%H"),
+                    "closest": {"t": close.time.strftime("%Y-%m-%dT%H"), "km": num(close.dist_korea, 0)}, "peak": peak,
                     "track": track(g, ["p_korea", "p_japan"])})
-    out.sort(key=lambda s: s["arrival"], reverse=True)
+    out.sort(key=lambda s: s["arrival"] or s["closest"]["t"], reverse=True)
     return out
 
 
-def reliability(df, bins=(0, .1, .2, .3, .4, .5, .6, .8, 1.0001), min_n=20):
-    """검증 기간(2015~) 시점별 서비스 방식 예측 확률을 구간으로 묶어 [평균 예측, 실제 비율, 시점 수]."""
-    out = {}
-    for c in ["korea", "japan"]:
-        d = add_targets(df[df.SEASON >= SPLIT_YEAR], c)
-        p, _ = predict(c, d)
-        t = pd.DataFrame({"p": p, "y": d.hit.to_numpy()})
-        g = t.groupby(pd.cut(t.p, bins, right=False), observed=True).agg(pred=("p", "mean"), obs=("y", "mean"),
-                                                                           n=("y", "size"))
-        out[c] = [[round(float(r.pred), 3), round(float(r.obs), 3), int(r.n)] for r in g.itertuples() if r.n >= min_n]
-    return out
-
-
-def export_stats(df):
-    years = range(int(df.SEASON.min()), int(df.SEASON.max()) + 1)
-    out = {"metrics": json.loads((ROOT / "reports" / "metrics.json").read_text()),
-           "analysis": json.loads((ROOT / "reports" / "analysis.json").read_text()),
-           "reliability": reliability(df)}
-    for c in ["korea", "japan"]:
-        hit = df[df[f"in_{c}"]].groupby("SID").time.min()
-        by_month = hit.dt.month.value_counts().reindex(range(1, 13), fill_value=0)
-        by_year = df[df.SID.isin(hit.index)].groupby("SID").SEASON.first().value_counts()
-        out[f"{c}_by_month"] = [int(v) for v in by_month.values]
-        out[f"{c}_by_year"] = {str(y): int(by_year.get(y, 0)) for y in years}
-    return out
+def export_stats():
+    return {"metrics": json.loads((ROOT / "reports" / "metrics.json").read_text()),
+            "analysis": json.loads((ROOT / "reports" / "analysis.json").read_text())}
 
 
 def refresh_sources(atmos_timeout=900):
@@ -233,10 +229,11 @@ def main():
     live = len(full) > len(base)
     df = add_env(add_features(full), gfs=True)
     models = ["korea", "japan"]
-    export_models()
     latest = export_recent(df, models, live)
     latest["feed_ok"] = realtime.FEED_OK
-    for name, obj in [("latest", latest), ("history", export_history(df, models)), ("stats", export_stats(df))]:
+    # 입력값은 예보 기록 전용이라 사이트 자료에는 넣지 않는다
+    site_latest = {**latest, "storms": [{k: v for k, v in s.items() if k != "inputs"} for s in latest["storms"]]}
+    for name, obj in [("latest", site_latest), ("history", export_history(df, models)), ("stats", export_stats())]:
         (OUT / f"{name}.json").write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
     if live:
         # 예보 전문은 7일치만 남으므로 접근 판정을 쌓아 두고 나중에 검증(forecast_log)
