@@ -1,4 +1,4 @@
-"""웹사이트(docs/)용 JSON 생성: 최근 태풍 예측, 지난 태풍 기록, 성적."""
+"""웹사이트(docs/)용 JSON 생성: 최근 태풍 예측, 지난 태풍 기록, 모델 지표."""
 import argparse
 import json
 from datetime import datetime, timezone
@@ -15,6 +15,7 @@ from .train import SPLIT_YEAR
 OUT = ROOT / "docs" / "data"
 RECENT_DAYS = 21
 NEAR_KM = 300          # 지난 태풍 목록 기준. 모델의 영향권(RADIUS_KM)과 별개
+ACTIVE_H = 18          # 마지막 관측이 이 안이면 아직 활동 중으로 본다(사이트 QUIET_H 와 같은 값)
 
 
 def num(v, d=2):
@@ -90,7 +91,7 @@ def us_forecast(w):
     """JTWC 예보(sources.jtwc.latest)를 사이트 형식으로. 영향권 판정은 일본 예보와 같은 계산, 오차 범위는 없다."""
     path = [(w["time"], w["lat"], w["lon"], 0)]
     path += [(w["time"] + pd.Timedelta(hours=h), la, lo, 0) for h, la, lo, _ in w["points"]]
-    return {"issued": w["time"].strftime("%Y-%m-%dT%H"), "number": w["number"], "wind": w["wind"], "points": w["points"],
+    return {"issued": w["issued"].strftime("%Y-%m-%dT%H"), "number": w["number"], "wind": w["wind"], "points": w["points"],
             "approach": approach(path)}
 
 
@@ -120,10 +121,11 @@ def export_recent(df, models, live=False):
             s["inputs"] = {k: num(last[k], 3) for k in [*FEATURES, *ENV_FEATURES] if k in g}
         storms.append(s)
     storms.sort(key=lambda s: s["end"], reverse=True)
+    from .sources import jtwc
+    us = jtwc.latest()         # 실시간 자료가 끊겨도 활동 중인 태풍을 확인할 수 있게 항상 받는다
+    print(f"[jtwc] 활동 중 예보 {len(us)}개")
     if live:
-        from .sources import jtwc
-        fc, us = latest_forecasts(), jtwc.latest()
-        print(f"[jtwc] 활동 중 예보 {len(us)}개")
+        fc = latest_forecasts()
         for s in storms:
             if s["end"] != last_time.strftime("%Y-%m-%dT%H"):
                 continue
@@ -132,7 +134,12 @@ def export_recent(df, models, live=False):
             if s["name"].upper() in us:
                 s["forecast_us"] = us_forecast(us[s["name"].upper()])
     return {"generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
-            "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "storms": storms}
+            "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "us_active": sorted(us), "storms": storms}
+
+
+def still_active(full, now=None):
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    return full.time.max() >= now - pd.Timedelta(hours=ACTIVE_H)
 
 
 def near_storms(df):
@@ -150,6 +157,8 @@ def export_history(df, models):
         g = predict_rows(full, models)
         arrival = full[full.in_korea].time.min()
         japan = full[full.in_japan].time.min()
+        if pd.isna(arrival) and still_active(full):    # 아직 접근 중일 수 있어 결과를 말할 수 없다
+            continue
         close = full.loc[full.dist_korea.idxmin()]
         ref = close.time if pd.isna(arrival) else arrival
         g = g[g.time <= ref + pd.Timedelta(hours=48)]
@@ -222,7 +231,9 @@ def main():
     models = ["korea", "japan"]
     latest = export_recent(df, models, live)
     latest["feed_ok"] = realtime.FEED_OK
-    for name, obj in [("latest", latest), ("history", export_history(df, models)), ("stats", export_stats())]:
+    # 입력값은 예보 기록 전용이라 사이트 자료에는 넣지 않는다
+    site_latest = {**latest, "storms": [{k: v for k, v in s.items() if k != "inputs"} for s in latest["storms"]]}
+    for name, obj in [("latest", site_latest), ("history", export_history(df, models)), ("stats", export_stats())]:
         (OUT / f"{name}.json").write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
     if live:
         # 예보 전문은 7일치만 남으므로 접근 판정을 쌓아 두고 나중에 검증(forecast_log)

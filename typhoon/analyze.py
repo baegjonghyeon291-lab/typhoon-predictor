@@ -39,6 +39,13 @@ def warning_lead(df, country, full=False):
     return {"storms": int(len(lead)), "median_warning_lead_h": float(lead.median()), **detect}
 
 
+def false_alarm(df, country):
+    """검증 기간에 경보(보정 확률 THRESHOLD 이상)를 낸 태풍 중 영향권에 끝내 들어오지 않은 비율."""
+    d = add_targets(df[df.SEASON >= SPLIT_YEAR], country)
+    warned = d[predict(country, d)[0] >= THRESHOLD].groupby("SID").arrival.first()
+    return {"warned_storms": int(len(warned)), "false_alarm_ratio": round(float(warned.isna().mean()), 3) if len(warned) else None}
+
+
 def agency_start(df):
     """같은 태풍을 KMA와 JMA가 각각 처음 기록한 시각 차이(KMA가 늦으면 +)."""
     d = df[df.SEASON >= 2015]
@@ -78,6 +85,7 @@ def main():
         "natural_lead": {c: natural_lead(df, c) for c in ["korea", "japan"]},
         "model_warning_lead": {c: warning_lead(df, c) for c in ["korea", "japan"]},
         "model_warning_lead_full": {c: warning_lead(df, c, full=True) for c in ["korea", "japan"]},
+        "model_false_alarm": {c: false_alarm(df, c) for c in ["korea", "japan"]},
         "agency_tracking_start": agency_start(df),
         "track_turn_last_48h": track_turn(df),
         "feature_importance": {c: importance(df, c) for c in ["korea", "japan"]},

@@ -4,7 +4,6 @@ const CITY_NAMES = ["서울", "부산", "광주", "제주", "강릉", "대전"];
 const JAPAN_CITIES = [[33.59, 130.40], [31.60, 130.56], [34.69, 135.50], [35.68, 139.69], [38.27, 140.87], [43.06, 141.35], [26.21, 127.68], [33.56, 133.53], [37.90, 139.00]];
 const JAPAN_NAMES = ["후쿠오카", "가고시마", "오사카", "도쿄", "센다이", "삿포로", "나하", "고치", "니가타"];
 const KMA_URL = "https://www.weather.go.kr/w/typhoon/report.do", JMA_URL = "https://www.jma.go.jp/bosai/map.html#contents=typhoon";
-const MODEL_FALSE_ALARM = "48%(52개 중)";      // 2015년~ 환경 모델, 도달 예측을 낸 태풍 중 안 온 비율(README)
 const WARN_P = .4;      // 경보 기준(typhoon/analyze.py THRESHOLD)
 const STALE_H = 18;     // 마지막 갱신이 이보다 오래되면 경고. 자동 갱신이 몇 시간씩 늦기도 한다
 const QUIET_H = 18;     // 새 관측이 이만큼 없을 때: 실시간 피드를 정상으로 받았으면 태풍 없음, 아니면 자료를 못 받은 것으로 알린다
@@ -76,6 +75,7 @@ const LV = [
   { name: "매우 강한 태풍", color: "#a4161a", ink: "#ff9a9e" },
   { name: "초강력 태풍", color: "#7b2cbf", ink: "#d3a6f7" },
 ];
+const lvLabel = i => i ? `${i}단계` : LV[0].name;
 const NO_LV = "#14213d";
 const US_LINE = "#0b8a5f";
 function lvIndex(kt, grade) {
@@ -433,7 +433,10 @@ function renderNow(latest) {
   // data_until 은 마지막 관측 시각이라 태풍이 없으면 멈춰 있다. 신선도는 갱신 시각(generated)으로 따진다
   const generatedAt = new Date(`${latest.generated}:00Z`).getTime();
   const longGap = (generatedAt - utc(latest.data_until).getTime()) / 36e5 >= QUIET_H;
-  const quiet = longGap && latest.feed_ok === true, noFeed = longGap && !quiet;
+  // 피드는 받았어도 전문을 못 읽었을 수 있다. JTWC가 활동 중이라고 하면 태풍 없음으로 처리하지 않는다
+  const usActive = latest.us_active || [];
+  const quiet = longGap && latest.feed_ok === true && !latest.storms.some(s => s.end === latest.data_until && usActive.includes(s.name.toUpperCase()));
+  const noFeed = longGap && !quiet;
   let liveN = 0, goneN = 0;
   const goneDraws = [], goneIdx = new Set();
   latest.storms.forEach((s, n) => {
@@ -537,7 +540,7 @@ function renderNow(latest) {
     const li = document.createElement("li");
     li.className = "last-card";
     li.innerHTML = `<span class="who">최근 한국 근접 태풍</span>`
-      + `<div class="s-head"><b>${stormFull(s)}</b>${lv != null ? `<span class="lv" style="--c:${LV[lv].color};--ci:${LV[lv].ink}">${lv}단계</span>` : `<span class="lv" style="--c:${NO_LV};--ci:#9bb8cd">강도 기록 없음</span>`}</div>`
+      + `<div class="s-head"><b>${stormFull(s)}</b>${lv != null ? `<span class="lv" style="--c:${LV[lv].color};--ci:${LV[lv].ink}">${lvLabel(lv)}</span>` : `<span class="lv" style="--c:${NO_LV};--ci:#9bb8cd">강도 기록 없음</span>`}</div>`
       + `<div class="vit">${s.season}년 ${s.arrival ? `${kst(s.arrival)} 한국 200km 진입` : `${kst(s.closest.t)} 한국 도시까지 최단 ${s.closest.km}km`}</div>`
       + `<div class="vit">${lead == null ? "한국 도달 예측 없음" : `${s.arrival ? "한국 첫 도달 예측" : "빗나간 한국 도달 예측"} ${lead}시간 전`}${dmg ? ` · 재산피해 ${won(dmg)}` : ""}</div>`
       + `<a class="last-link" href="#history">지난 태풍에서 보기</a>`;
@@ -586,12 +589,13 @@ function renderCompare(stats, kma) {
   // 지표 표. 경보 기준이 달라 값만으로 우열을 가리지 않도록 기준과 미집계 항목을 함께 둔다
   const me = lead("korea"), x = full.korea || m.korea, k = kmaF || {};
   const cell = (v, u = "") => has(v) ? v + u : "–";
+  const fa = (a.model_false_alarm || {}).korea;
   $("metrics").innerHTML = tableHtml(["2015년~", "자체 모델", "기상청"], [
     ["도달 예측 기준", `확률 ${pct(WARN_P)} 이상`, "예보 경로 200km 진입"],
     ["첫 도달 예측(중앙값)", cell(me.median_warning_lead_h, "시간 전"), cell(k.median_warning_lead_h, "시간 전")],
-    ["빗나간 도달 예측", MODEL_FALSE_ALARM, "미집계"],
+    ["빗나간 도달 예측", fa && has(fa.false_alarm_ratio) ? `${pct(fa.false_alarm_ratio)}(${fa.warned_storms}개 중)` : "–", "미집계"],
     ["진입 시각 오차(평균)", cell(x.arrival_mae_h, "시간"), "미집계"],
-    ["한국 200km 진입 태풍", cell(me.storms, "개"), cell(k.storms, "개")],
+    ["평가한 태풍 수", cell(me.storms, "개"), cell(k.storms, "개")],
   ]);
 
   // 요인: 가는 막대 표
@@ -644,7 +648,7 @@ function renderHistory(history, damage) {
     const lead = firstLead(cur), first = lead != null;
     const it = items[history.indexOf(cur)];
     return `<b>${cur.season} ${stormFull(cur)}</b>`
-      + (it.lv != null ? ` · ${it.lv}단계(${LV[it.lv].name}, 최대 ${it.peak}kt)` : "")
+      + (it.lv != null ? ` · ${it.lv ? `${lvLabel(it.lv)}(${LV[it.lv].name}, ` : `${lvLabel(0)}(`}최대 ${it.peak}kt)` : "")
       + (it.dmg ? ` · 재산피해 ${won(it.dmg)}` : "")
       + (cur.arrival ? ` · 한국 200km 진입 ${kst(cur.arrival)} · ${first ? `한국 첫 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`
         : ` · 한국 도시까지 최단 ${cur.closest.km}km(${kst(cur.closest.t)}) · ${first ? `빗나간 한국 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`)
@@ -734,15 +738,16 @@ function renderHistory(history, damage) {
   // 목록: 연도·단계로 거르고 최신·피해·강도 순으로 정렬
   const f = { year: "", lv: "", sort: "new" };
   const SORT = { new: (a, b) => a.i - b.i, dmg: (a, b) => (b.dmg?.won ?? -1) - (a.dmg?.won ?? -1) || a.i - b.i, peak: (a, b) => (b.peak ?? -1) - (a.peak ?? -1) || a.i - b.i };
+  let mapSeen = false;
   function refresh() {
     const rows = items.filter(r => (!f.year || r.s.season === +f.year) && (f.lv === "" || r.lv === +f.lv)).sort(SORT[f.sort]);
     list.innerHTML = rows.length ? rows.map(r => {
       const L1 = r.lv != null ? LV[r.lv] : null;
       const hurt = r.dmg ? won(r.dmg) : f.sort === "dmg" ? "피해 자료 없음" : "";
-      return `<li><button type="button" data-i="${r.i}"><span class="h-top"><b>${stormName(r.s)}</b>${L1 ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${r.lv}단계</span>` : `<span class="lv" style="--c:${NO_LV};--ci:#9bb8cd">강도 기록 없음</span>`}</span><span class="h-sub">${r.s.season}년 ${+refTime(r.s).slice(5, 7)}월 · ${r.s.arrival ? "200km 진입" : `도시까지 최단 ${r.s.closest.km}km`}${hurt ? ` · ${hurt}` : ""}</span></button></li>`;
+      return `<li><button type="button" data-i="${r.i}"><span class="h-top"><b>${stormName(r.s)}</b>${L1 ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${lvLabel(r.lv)}</span>` : `<span class="lv" style="--c:${NO_LV};--ci:#9bb8cd">강도 기록 없음</span>`}</span><span class="h-sub">${r.s.season}년 ${+refTime(r.s).slice(5, 7)}월 · ${r.s.arrival ? "200km 진입" : `도시까지 최단 ${r.s.closest.km}km`}${hurt ? ` · ${hurt}` : ""}</span></button></li>`;
     }).join("") : `<li class="h-none">해당 태풍 없음</li>`;
     if (rows.some(r => r.s === cur)) markList();
-    else if (rows.length) load(rows[0].i);
+    else if (rows.length && mapSeen) load(rows[0].i);      // 무거운 그리기는 지도가 보일 때 한다
   }
   list.addEventListener("click", e => {
     const b = e.target.closest("button");
@@ -763,9 +768,10 @@ function renderHistory(history, damage) {
       refresh();
     });
   };
-  group("histLv", "lv", [["", "전체"], ...[5, 4, 3, 2, 1].map(n => [String(n), `${n}단계`])]);
+  group("histLv", "lv", [["", "전체"], ...[5, 4, 3, 2, 1, ...(items.some(r => r.lv === 0) ? [0] : [])].map(n => [String(n), lvLabel(n)])]);
   group("histSort", "sort", [["new", "최신순"], ["dmg", "피해 큰 순"], ["peak", "강한 순"]]);
-  seen($("histMap"), refresh, .1);
+  refresh();
+  seen($("histMap"), () => { mapSeen = true; refresh(); }, .1);
 }
 
 /* ---------- 시작 ---------- */

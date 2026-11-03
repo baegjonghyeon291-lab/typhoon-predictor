@@ -386,11 +386,11 @@ def test_jtwc_parse_warning():
     import datetime as dt
     w = jtwc.parse_warning(WARNING, now=dt.datetime(2026, 11, 1, 5))    # 다음 달 초에 받아도 지난달 31일로
     assert w["name"] == "IN-FA" and w["number"] == "30W" and w["wind"] == 70
-    assert w["time"] == dt.datetime(2026, 10, 31, 0)
+    assert w["time"] == dt.datetime(2026, 10, 31, 0) and w["issued"] == dt.datetime(2026, 10, 31, 3)
     assert w["points"] == [[12, 23.5, 138.7, 75], [24, 24.4, 190.0, 65]]
     assert jtwc.parse_warning("다른 형식") is None
     f = export.us_forecast(w)
-    assert f["issued"] == "2026-10-31T00" and f["approach"]["korea"]["cone"] is None
+    assert f["issued"] == "2026-10-31T03" and f["approach"]["korea"]["cone"] is None
 
 
 def test_log_keeps_inputs_and_us_forecast(tmp_path, monkeypatch):
@@ -404,3 +404,36 @@ def test_log_keeps_inputs_and_us_forecast(tmp_path, monkeypatch):
     r = json.loads(forecast_log.LOG.read_text())
     assert r["inputs"] == {"LAT": 25.0} and r["us"]["issued"] == "2026-08-01T00"
     assert r["model"]["korea"]["why"] == [["계절", 3]]
+
+
+def test_log_keeps_us_forecast_without_new_japan_issue(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    track = [["2026-08-01T00", 25.0, 130.0, 60, 980, 0.1, 0.2]]
+
+    def latest(jma, us):
+        s = {"sid": "s", "name": "X", "end": "2026-08-01T00", "track": track, "korea": {"p": .1}, "japan": {"p": .2}}
+        if jma:
+            s["forecast"] = {"issued": jma, "points": [], "approach": {}}
+        if us:
+            s["forecast_us"] = {"issued": us, "points": []}
+        return {"generated": "2026-08-01T05:00", "data_until": "2026-08-01T00", "storms": [s]}
+    assert forecast_log.append(latest(None, "2026-08-01T03")) == 1      # 일본 예보가 없어도 남긴다
+    assert forecast_log.append(latest("2026-08-01T00", "2026-08-01T03")) == 1
+    assert forecast_log.append(latest("2026-08-01T00", "2026-08-01T09")) == 1   # 미국 예보만 새로 나옴
+    assert forecast_log.append(latest("2026-08-01T00", "2026-08-01T09")) == 0
+
+
+def test_still_active():
+    import datetime as dt
+    now = dt.datetime(2026, 8, 2, 0)
+    assert export.still_active(pd.DataFrame({"time": pd.to_datetime(["2026-08-01T12"])}), now)
+    assert not export.still_active(pd.DataFrame({"time": pd.to_datetime(["2026-07-30T12"])}), now)
+
+
+def test_false_alarm(monkeypatch):
+    from typhoon import analyze
+    t = pd.to_datetime(["2020-08-01T00", "2020-08-02T00", "2020-08-01T00", "2020-08-01T00"])
+    df = pd.DataFrame({"SID": ["hit", "hit", "miss", "quiet"], "SEASON": 2020, "time": t,
+                       "in_korea": [False, True, False, False]})
+    monkeypatch.setattr(analyze, "predict", lambda c, d: (np.where(d.SID == "quiet", .1, .9), None))
+    assert analyze.false_alarm(df, "korea") == {"warned_storms": 2, "false_alarm_ratio": .5}

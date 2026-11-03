@@ -7,7 +7,7 @@
 실행: python -m typhoon.sources.jtwc
 """
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import requests
 
@@ -38,20 +38,21 @@ def _lon(v, side):
 
 
 def parse_warning(text, now=None):
-    """경보 전문 하나를 {name, number, time, lat, lon, wind, points}로. 형식이 다르면 None.
-    points 는 [예보 시간, 위도, 경도, 최대풍속(kt)] 목록, time 은 UTC."""
+    """경보 전문 하나를 {name, number, issued, time, lat, lon, wind, points}로. 형식이 다르면 None.
+    points 는 [예보 시간, 위도, 경도, 최대풍속(kt)] 목록. time 은 위치 기준 시각, issued 는 발표 시각(모두 UTC)."""
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     head = re.search(r"SUBJ/.*?\b(\d{2}[A-Z])\s*\(([^)]+)\)", text)
     pos = re.search(r"WARNING POSITION:\s*(\d{4})\d{2}Z --- NEAR (\d+\.\d)N (\d+\.\d)([EW])", text)
     if not head or not pos:
         return None
     t0 = _when(pos[1], now)
+    head_time = re.search(r"\bPGTW (\d{4})\d{2}\b", text)
     wind = re.search(r"PRESENT WIND DISTRIBUTION:\s*MAX SUSTAINED WINDS - (\d+) KT", text)
     points = []
     block = re.compile(r"(\d+) HRS, VALID AT:\s*\d{6}Z --- (\d+\.\d)N (\d+\.\d)([EW])\s*MAX SUSTAINED WINDS - (\d+) KT")
     for m in block.finditer(text):
         points.append([int(m[1]), float(m[2]), _lon(m[3], m[4]), int(m[5])])
-    return {"name": head[2].strip().upper(), "number": head[1], "time": t0, "lat": float(pos[2]),
+    return {"name": head[2].strip().upper(), "number": head[1], "issued": _when(head_time[1], now) if head_time else t0, "time": t0, "lat": float(pos[2]),
             "lon": _lon(pos[3], pos[4]), "wind": int(wind[1]) if wind else None, "points": points}
 
 
@@ -79,4 +80,4 @@ def latest(now=None):
 
 if __name__ == "__main__":
     for name, w in latest().items():
-        print(name, w["number"], w["time"] + timedelta(0), w["points"])
+        print(name, w["number"], w["issued"], w["points"])
