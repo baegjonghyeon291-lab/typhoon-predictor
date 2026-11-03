@@ -551,3 +551,11 @@ def test_score_sources_same_rules(tmp_path, monkeypatch):
     assert s["kr"]["issues"] == 1 and s["kr"]["korea"]["hit"] == 1
     assert s["kr"]["track_error_km"]["24h"]["n"] == 1 and s["kr"]["track_error_km"]["24h"]["mean"] < 10
     assert s["jma"]["korea"]["hit"] == 1 and s["us"]["issues"] == 0
+
+
+def test_display_wind_falls_back_to_usa():
+    from typhoon.export import display_wind
+    g = pd.DataFrame({"wind": [50.0, np.nan, np.nan], "USA_WIND": [60.0, 100.0, np.nan]})
+    w, used = display_wind(g)
+    assert used and w.iloc[0] == 50 and w.iloc[1] == pytest.approx(88) and np.isnan(w.iloc[2])
+    assert display_wind(g.assign(wind=[1.0, 2.0, 3.0]))[1] is False

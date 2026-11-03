@@ -483,7 +483,7 @@ function renderNow(latest) {
       const L1 = LV[idx];
       li.style.animationDelay = `${liveN * 90}ms`;
       li.innerHTML = `<div class="s-head"><b>${stormFull(s)}</b>${kt != null || s.grade != null ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${lvName(kt, s.grade)}</span>` : ""}</div>`
-        + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt(${kn2ms(kt)}m/s)` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
+        + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt(${kn2ms(kt)}m/s)${s.wind_usa ? " 미국 환산" : ""}` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
         + compareTable(s) + details(s, "korea", "한국") + details(s, "japan", "일본")
         + `${s.env ? "" : '<div class="src weak">상공 자료 없음</div>'}`;
       list.appendChild(li); liveN++;
@@ -674,7 +674,7 @@ function renderHistory(history, damage, review = {}) {
     const lead = firstLead(cur), first = lead != null;
     const it = items[history.indexOf(cur)];
     return `<b>${cur.season} ${stormFull(cur)}</b>`
-      + (it.lv != null ? ` · ${it.lv ? `${lvLabel(it.lv)}(${LV[it.lv].name}, ` : `${lvLabel(0)}(`}최대 ${it.peak}kt)` : "")
+      + (it.lv != null ? ` · ${it.lv ? `${lvLabel(it.lv)}(${LV[it.lv].name}, ` : `${lvLabel(0)}(`}최대 ${it.peak}kt${cur.wind_usa ? ", 미국 풍속 환산" : ""})` : "")
       + (it.dmg ? ` · 재산피해 ${won(it.dmg)}` : "")
       + (cur.arrival ? ` · 한국 200km 진입 ${kst(cur.arrival)} · ${first ? `한국 첫 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`
         : ` · 한국 도시까지 최단 ${cur.closest.km}km(${kst(cur.closest.t)}) · ${first ? `빗나간 한국 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`)

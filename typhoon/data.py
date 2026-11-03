@@ -23,7 +23,7 @@ CITY_NAMES = {
 RADIUS_KM = 200
 
 COLS = ["SID", "SEASON", "NAME", "ISO_TIME", "LAT", "LON", "DIST2LAND",
-        "TOKYO_LAT", "TOKYO_GRADE", "TOKYO_WIND", "TOKYO_PRES", "KMA_LAT", "KMA_WIND", "KMA_PRES"]
+        "TOKYO_LAT", "TOKYO_GRADE", "TOKYO_WIND", "TOKYO_PRES", "KMA_LAT", "KMA_WIND", "KMA_PRES", "USA_WIND"]
 
 
 def download():
@@ -48,7 +48,7 @@ def load(start_year=1951):
     df = pd.read_csv(RAW, skiprows=[1], usecols=COLS, low_memory=False, na_values=[" ", ""])
     df["time"] = pd.to_datetime(df["ISO_TIME"])
     df = df[(df.SEASON >= start_year) & (df.time.dt.hour % 6 == 0)].copy()
-    for c in ["LAT", "LON", "DIST2LAND", "TOKYO_LAT", "TOKYO_WIND", "TOKYO_PRES", "KMA_LAT", "KMA_WIND", "KMA_PRES"]:
+    for c in ["LAT", "LON", "DIST2LAND", "TOKYO_LAT", "TOKYO_WIND", "TOKYO_PRES", "KMA_LAT", "KMA_WIND", "KMA_PRES", "USA_WIND"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.sort_values(["SID", "time"]).reset_index(drop=True)
     for c in CITIES:
