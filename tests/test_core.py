@@ -455,3 +455,27 @@ def test_track_future_and_turn():
     assert px[0] == pytest.approx(-2.0) and py[0] == 0
     turn = track.turn_table(d)
     assert turn.turn.iloc[0] == 1      # 서진 중 앞으로 북쪽으로 꺾임
+
+
+# ---------------------------------------------------------------- GFS 예보 중심 추적
+def test_gfs_track_follows_moving_low():
+    from typhoon import gfs_track as G
+    lat0, lon0 = 15.0, 140.0
+    P = np.empty((len(G.LEADS), len(G.LAT), len(G.LON)), np.float32)
+    for i, f in enumerate(G.LEADS):          # 6시간마다 북서로 0.6°·0.9° 이동하는 저기압
+        la, lo = lat0 + .1 * f, lon0 - .15 * f
+        d = haversine(G.LAT[:, None], G.LON[None, :], la, lo)
+        P[i] = 1010 - 40 * np.exp(-(d / 250) ** 2)
+    tr = G.track_cycle(P, lat0, lon0)
+    assert [t[0] for t in tr] == G.LEADS                  # 끝까지 따라감
+    f, la, lo, pm = tr[-1]
+    assert haversine(la, lo, lat0 + .1 * f, lon0 - .15 * f) < 60
+    flat = np.full_like(P, 1010)                          # 저기압이 없으면 바로 놓침
+    assert G.track_cycle(flat, lat0, lon0) == []
+
+
+def test_gfs_cycle_uses_only_published_runs():
+    from typhoon.gfs_track import cycle_for
+    assert cycle_for("2026-10-20T06") == pd.Timestamp("2026-10-20T00")
+    assert cycle_for("2026-10-20T00") == pd.Timestamp("2026-10-19T12")   # 00시 발표는 아직 공개 전
+    assert cycle_for("2026-10-20T18") == pd.Timestamp("2026-10-20T12")
