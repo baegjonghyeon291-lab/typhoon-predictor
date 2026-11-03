@@ -28,6 +28,8 @@ jobs:
           key: gfs-${{ github.run_id }}
           restore-keys: gfs-
       - run: python -m typhoon.export --update
+        env:
+          KMA_APIHUB_KEY: ${{ secrets.KMA_APIHUB_KEY }}   # 없으면 기상청 예보만 빠진다
       - name: 변경 사항 커밋
         run: |
           git config user.name "github-actions[bot]"

@@ -95,6 +95,13 @@ def us_forecast(w):
             "approach": approach(path)}
 
 
+def kr_forecast(w):
+    """기상청 예보(sources.kma.latest)를 사이트 형식으로. 영향권 판정은 일본·미국 예보와 같은 계산."""
+    path = [(w["time"], w["lat"], w["lon"], 0)]
+    path += [(w["time"] + pd.Timedelta(hours=h), la, lo, 0) for h, la, lo, _ in w["points"]]
+    return {"issued": w["issued"].strftime("%Y-%m-%dT%H"), "seq": w["seq"], "points": w["points"], "approach": approach(path)}
+
+
 def safe_own_track(g):
     """GFS 추적 자체 경로(gfs_track.own_track)에 영향권 판정을 붙인다. 실패해도 갱신은 이어 간다."""
     try:
@@ -140,6 +147,13 @@ def export_recent(df, models, live=False):
     from .sources import jtwc
     us = jtwc.latest()         # 실시간 자료가 끊겨도 활동 중인 태풍을 확인할 수 있게 항상 받는다
     print(f"[jtwc] 활동 중 예보 {len(us)}개")
+    from .sources import kma
+    try:
+        kr = kma.latest() if live else {}
+    except Exception as ex:  # noqa: BLE001
+        print(f"[kma] 실패: {type(ex).__name__}")
+        kr = {}
+    print(f"[kma] 활동 중 예보 {len(kr)}개")
     if live:
         fc = latest_forecasts()
         for s in storms:
@@ -149,6 +163,8 @@ def export_recent(df, models, live=False):
                 s["forecast"] = fc[s["name"].upper()]
             if s["name"].upper() in us:
                 s["forecast_us"] = us_forecast(us[s["name"].upper()])
+            if s["name"].upper() in kr:
+                s["forecast_kr"] = kr_forecast(kr[s["name"].upper()])
             own = safe_own_track(df[df.SID == s["sid"]].sort_values("time"))
             if own:
                 s["track_own"] = own

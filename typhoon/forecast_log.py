@@ -34,15 +34,15 @@ def _read():
 
 def append(latest):
     """export_recent 결과(latest.json 객체)에서 활동 중이고 예보가 있는 태풍을 기록. 새로 쓴 줄 수 반환."""
-    seen = {(r.get("sid"), r.get("name"), r.get("issued"), (r.get("us") or {}).get("issued"), (r.get("own") or {}).get("cycle"))
-            for r in _read()}
+    seen = {(r.get("sid"), r.get("name"), r.get("issued"), (r.get("us") or {}).get("issued"), (r.get("own") or {}).get("cycle"),
+             (r.get("kr") or {}).get("issued")) for r in _read()}
     new = []
     for s in latest.get("storms", []):
-        fc, us, own = s.get("forecast"), s.get("forecast_us"), s.get("track_own")
+        fc, us, own, kr = s.get("forecast"), s.get("forecast_us"), s.get("track_own"), s.get("forecast_kr")
         fc = fc if fc and "approach" in fc else {}        # 일본·미국 중 하나만 있어도, 어느 쪽이든 새 발표면 남긴다
-        if s.get("end") != latest.get("data_until") or not (fc or us or own):
+        if s.get("end") != latest.get("data_until") or not (fc or us or own or kr):
             continue
-        key = (s["sid"], s["name"], fc.get("issued"), (us or {}).get("issued"), (own or {}).get("cycle"))
+        key = (s["sid"], s["name"], fc.get("issued"), (us or {}).get("issued"), (own or {}).get("cycle"), (kr or {}).get("issued"))
         if key in seen:
             continue
         last = s["track"][-1]
@@ -50,7 +50,7 @@ def append(latest):
                     "position": {"time": last[0], "lat": last[1], "lon": last[2]},
                     "points": fc.get("points"), "approach": fc.get("approach"), "env": s.get("env"),
                     "model": {c: s[c] for c in COUNTRIES if c in s},   # 확률·도착 시간과 근거(why)
-                    "inputs": s.get("inputs"), "us": us, "own": own})   # own: GFS 추적 자체 경로(gfs_track.own_track)
+                    "inputs": s.get("inputs"), "us": us, "own": own, "kr": kr})   # own: GFS 추적 자체 경로(gfs_track.own_track)
         seen.add(key)
     if new:
         LOG.parent.mkdir(parents=True, exist_ok=True)

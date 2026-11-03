@@ -490,3 +490,19 @@ def test_log_keeps_own_track(tmp_path, monkeypatch):
     assert forecast_log._read()[0]["own"]["cycle"] == "2026-08-31T12"
     latest["storms"][0]["track_own"] = dict(latest["storms"][0]["track_own"], cycle="2026-09-01T00")
     assert forecast_log.append(latest) == 1                 # GFS 새 발표도 새 기록
+
+
+def test_kma_latest_without_key_is_empty(monkeypatch):
+    from typhoon.sources import kma
+    monkeypatch.setenv("KMA_APIHUB_KEY", "")
+    assert kma.latest() == {}                               # 키가 없으면 갱신을 멈추지 않고 건너뜀
+
+
+def test_log_keeps_kma_forecast(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    latest = _latest()
+    latest["storms"][0]["forecast_kr"] = {"issued": "2026-09-01T00", "seq": 3, "points": [[24, 32.0, 129.0, 30]]}
+    assert forecast_log.append(latest) == 1
+    latest["storms"][0]["forecast_kr"] = dict(latest["storms"][0]["forecast_kr"], issued="2026-09-01T06")
+    assert forecast_log.append(latest) == 1                 # 기상청 새 발표도 새 기록
+    assert [r["kr"]["issued"] for r in forecast_log._read()] == ["2026-09-01T00", "2026-09-01T06"]
