@@ -627,7 +627,7 @@ function renderCompare(stats, kma) {
 }
 
 /* ---------- 지난 태풍 ---------- */
-function renderHistory(history, damage) {
+function renderHistory(history, damage, review = {}) {
   const list = $("histList"), scrub = $("scrub"), play = $("play");
   // 단계는 경로 중 최대풍속 기준(LV의 번호: 5단계 = 초강력 태풍)
   const items = history.map((s, i) => {
@@ -662,6 +662,14 @@ function renderHistory(history, damage) {
   const refName = () => cur.arrival ? "200km 진입" : "최단 거리";
   const hoursTo = t => (utc(t[0]) - utc(refTime(cur))) / 36e5;
 
+  // 복기: 실제 전향 시작과 누가 언제 처음 전향을 예측했는지(typhoon/review.py)
+  function turnLine(r) {
+    if (!r || !r.turn) return "";
+    const who = (name, v) => v === "none" ? null : `${name} ${v ? `${kst(v.t)}(${v.lead_h}시간 전)` : "예측 없음"}`;
+    const parts = [who("기상청", r.kma), who("자체 경로", r.own), who("자체 분류", r.clf)].filter(Boolean);
+    return `<span class="h-why">전향 시작 ${kst(r.turn)} · 첫 전향 예측: ${parts.join(" · ")}</span>`;
+  }
+
   function summary() {
     const lead = firstLead(cur), first = lead != null;
     const it = items[history.indexOf(cur)];
@@ -671,6 +679,7 @@ function renderHistory(history, damage) {
       + (cur.arrival ? ` · 한국 200km 진입 ${kst(cur.arrival)} · ${first ? `한국 첫 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`
         : ` · 한국 도시까지 최단 ${cur.closest.km}km(${kst(cur.closest.t)}) · ${first ? `빗나간 한국 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`)
       + (cur.arrival_japan ? ` · 일본 200km 진입 ${kst(cur.arrival_japan)}` : "")
+      + turnLine(review[cur.sid])
       + (cur.peak ? `<span class="h-why">한국 최고 확률 ${pct(cur.peak.p)}(${kst(cur.peak.t)})${cur.peak.why?.length ? ` · 요인별 영향(없을 때 대비): ${whyText(cur.peak.why)}` : ""}</span>` : "");
   }
 
@@ -823,9 +832,9 @@ const nowReady = soft("data/latest.json").then(latest => {
   guard("now", latest && latest.storms && latest, l => { now = renderNow(l); });
   return now;
 });
-Promise.all(["history", "damage"].map(n => soft(`data/${n}.json`))).then(([history, damage]) => {
+Promise.all(["history", "damage", "review"].map(n => soft(`data/${n}.json`))).then(([history, damage, review]) => {
   const dmg = (damage && damage.storms) || {};
-  guard("history", history && history.length && history, h => renderHistory(h, dmg));
+  guard("history", history && history.length && history, h => renderHistory(h, dmg, review || {}));
   if (history && history.length) nowReady.then(now => { if (now && now.idle) now.showLast(history[0], dmg); });
 });
 Promise.all(["stats", "kma_lead"].map(n => soft(`data/${n}.json`))).then(([stats, kma]) => {

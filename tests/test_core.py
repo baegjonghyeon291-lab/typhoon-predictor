@@ -506,3 +506,31 @@ def test_log_keeps_kma_forecast(tmp_path, monkeypatch):
     latest["storms"][0]["forecast_kr"] = dict(latest["storms"][0]["forecast_kr"], issued="2026-09-01T06")
     assert forecast_log.append(latest) == 1                 # 기상청 새 발표도 새 기록
     assert [r["kr"]["issued"] for r in forecast_log._read()] == ["2026-09-01T00", "2026-09-01T06"]
+
+
+# ---------------------------------------------------------------- 복기(전향)
+def _storm(turn_at=None, n=24):
+    """6시간마다 서쪽으로 가다가 turn_at번째 점부터 북쪽으로 꺾이는 가짜 경로."""
+    lat, lon, rows = 15.0, 140.0, []
+    t = pd.date_range("2026-09-01", periods=n, freq="6h")
+    for i in range(n):
+        rows.append((t[i], lat, lon))
+        if turn_at is not None and i >= turn_at:
+            lat += .7
+        else:
+            lon -= .7
+    return pd.DataFrame(rows, columns=["time", "LAT", "LON"])
+
+
+def test_review_actual_turn_and_first_call():
+    from typhoon.review import actual_turn, first_call
+    assert actual_turn(_storm(None)) is None
+    g = _storm(12)
+    turn = actual_turn(g)
+    assert turn is not None and turn <= g.time[12]
+    hh = np.arange(0, 121, 12)
+    straight = (g.time[4], hh, np.full(len(hh), 15.0), 140 - 4 * .7 - hh / 6 * .7)          # 계속 서진 예보
+    north = (g.time[6], hh, 15.0 + np.where(hh > 24, (hh - 24) / 6 * .7, 0),                 # 24시간 뒤 북상 예보
+             np.where(hh > 24, 140 - 10 * .7, 140 - 6 * .7 - hh / 6 * .7))
+    assert first_call([straight], g, turn) is None
+    assert first_call([straight, north], g, turn) == g.time[6]
