@@ -68,7 +68,7 @@ ol, ul { list-style: none; }
 .empty { padding: 14px 0 14px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
 
 /* 섹션 */
-section { scroll-margin-top: 44px; }
+section { scroll-margin-top: var(--top-h); }
 section:not(.stage) { padding-top: clamp(72px, 9vw, 128px); }
 .wrap { max-width: 1200px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px); }
 main { padding-bottom: 104px; }
@@ -167,9 +167,6 @@ td small { color: var(--muted); font-size: 12px; }
   .hist-grid .map { height: 400px; }
 }
 @media (max-width: 520px) {
-  .top nav { gap: 14px; }
-  .top nav a { font-size: 13px; }
-  .brand { font-size: 15px; }
   .tc-legend { font-size: 10.5px; padding: 5px 7px; }
   .hist-grid .map { height: 340px; }
   th, td { padding-right: 6px; font-size: 13px; }
@@ -318,8 +315,6 @@ tbody tr:hover { background: rgba(79,209,232,.07); }
 @media (max-width: 520px) {
   .top { gap: 10px; }
   .top nav { min-width: 0; }
-  .top nav { padding-right: 22px; -webkit-mask-image: linear-gradient(90deg, #000 86%, transparent); mask-image: linear-gradient(90deg, #000 86%, transparent); }
-  .top nav a { display: inline-block; padding: 12px 0; line-height: 20px; }
   .tc-label small { display: none; }
   .tc-date { display: none; }
   .map.focus .tc-date.hot { display: block; }
@@ -367,4 +362,17 @@ tbody tr:hover { background: rgba(79,209,232,.07); }
 .cmp-cap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; }
 .cmp-cap a { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .cmp tbody th small { display: block; font-size: 10.5px; font-weight: 500; }
-#histSummary { scroll-margin-top: 56px; }
+#histSummary { scroll-margin-top: calc(var(--top-h) + 12px); }
+/* 헤더: 메뉴를 스크롤 없이 바로 누를 수 있게 */
+:root { --top-h: 64px; }
+.top { height: var(--top-h); padding: 0 clamp(16px, 3vw, 40px); }
+.brand { font-size: 22px; }
+.top nav { gap: 32px; overflow: visible; }
+.top nav a { display: flex; align-items: center; min-height: 44px; padding: 0; font-size: 17px; font-weight: 700; }
+.top nav a::after { bottom: 4px; height: 2px; }
+@media (max-width: 520px) {
+  :root { --top-h: 56px; }
+  .brand { font-size: 17px; }
+  .top nav { gap: 14px; }
+  .top nav a { font-size: 14.5px; }
+}

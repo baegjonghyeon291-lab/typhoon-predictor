@@ -92,6 +92,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m typhoon.predict --update   # 최신 데이터 받아 가장 최근 태풍 예측
 .venv/bin/python -m typhoon.predict --sid 2026288N10161
 .venv/bin/python -m typhoon.export --update     # 사이트 데이터 갱신 → docs/data/
+.venv/bin/python -m typhoon.track      # 경로·전향 모델 실험 → reports/track_experiment.txt
 ```
 
 ## 웹사이트

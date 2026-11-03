@@ -357,7 +357,7 @@ function renderNow(latest) {
     if (!live) return L.latLngBounds(pts);
     return L.latLngBounds([...pts, ...[...(s.forecast?.points || []), ...(s.forecast_us?.points || [])].map(p => [p[1], p[2]]), ...KOREA_CITIES, ...JAPAN_CITIES]);
   };
-  const scrollToEl = (e, off = 44) => window.scrollTo({ top: e.getBoundingClientRect().top + scrollY - off, behavior: REDUCED ? "auto" : "smooth" });
+  const scrollToEl = (e, off = document.querySelector(".top").offsetHeight) => window.scrollTo({ top: e.getBoundingClientRect().top + scrollY - off, behavior: REDUCED ? "auto" : "smooth" });
   const toMap = () => { if (!wide()) scrollToEl(mapEl); };
   $("toMap").addEventListener("click", toMap);
   const markCards = () => cards.forEach((c, i) => { c.classList.toggle("sel", i === selected); c.setAttribute("aria-pressed", i === selected); });
@@ -813,14 +813,14 @@ Promise.all(["history", "damage"].map(n => soft(`data/${n}.json`))).then(([histo
 Promise.all(["stats", "kma_lead"].map(n => soft(`data/${n}.json`))).then(([stats, kma]) => {
   guard("compare", stats && stats.analysis && stats, s => renderCompare(s, kma));
 });
-// 메뉴에 지금 보는 섹션 표시(좁은 화면에서는 그 메뉴가 보이도록 옆으로 밀기)
+// 메뉴에 지금 보는 섹션 표시
 if ("IntersectionObserver" in window) {
-  const links = [...document.querySelectorAll(".top nav a")], nav = document.querySelector(".top nav");
+  const links = [...document.querySelectorAll(".top nav a")];
   const io = new IntersectionObserver(es => es.forEach(e => {
     if (!e.isIntersecting) return;
     links.forEach(a => {
       const on = a.getAttribute("href") === `#${e.target.id}`;
-      if (on) { a.setAttribute("aria-current", "true"); nav.scrollTo({ left: a.offsetLeft - nav.offsetLeft - 40, behavior: REDUCED ? "auto" : "smooth" }); }
+      if (on) a.setAttribute("aria-current", "true");
       else a.removeAttribute("aria-current");
     });
   }), { rootMargin: "-45% 0px -50% 0px" });

@@ -437,3 +437,21 @@ def test_false_alarm(monkeypatch):
                        "in_korea": [False, True, False, False]})
     monkeypatch.setattr(analyze, "predict", lambda c, d: (np.where(d.SID == "quiet", .1, .9), None))
     assert analyze.false_alarm(df, "korea") == {"warned_storms": 2, "false_alarm_ratio": .5}
+
+
+# ---------------------------------------------------------------- 경로·전향
+def test_track_future_and_turn():
+    from typhoon import track
+    assert track.angle_diff(350.0, 10.0) == 20
+    t = pd.date_range("2020-08-01", periods=17, freq="6h")
+    lat = [10 + .5 * max(0, i - 8) * 2 for i in range(17)]        # 서진하다 2일 뒤부터 북상
+    lon = [140 - .5 * min(i, 8) for i in range(17)]
+    d = pd.DataFrame({"SID": "a", "time": t, "LAT": lat, "LON": lon})
+    d["dlat_24"], d["dlon_24"] = d.LAT - d.LAT.shift(4), d.LON - d.LON.shift(4)
+    d["dlat_6"], d["dlon_6"] = d.LAT - d.LAT.shift(1), d.LON - d.LON.shift(1)
+    f = track.add_future(d, 24)
+    assert f.dx.iloc[0] == pytest.approx(-2.0) and f.dy.iloc[-1] != f.dy.iloc[-1]    # 끝 시점은 정답 없음
+    py, px = track.persistence(d.iloc[[4]], 24)
+    assert px[0] == pytest.approx(-2.0) and py[0] == 0
+    turn = track.turn_table(d)
+    assert turn.turn.iloc[0] == 1      # 서진 중 앞으로 북쪽으로 꺾임
