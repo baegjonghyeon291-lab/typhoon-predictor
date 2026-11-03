@@ -156,11 +156,11 @@ def _find(field, lat, lon):
     return LAT[iy] + dy, LON[ix] + dx, float(pmin)
 
 
-def track_cycle(P, lat0, lon0):
+def track_cycle(P, lat0, lon0, leads=None):
     """발표 하나(P[리드, y, x])에서 (lat0, lon0)부터 중심 추적 → [(리드, lat, lon, pmin)]. 놓치면 거기서 끝."""
     out, prev = [], None
     lat, lon = lat0, lon0
-    for i, f in enumerate(LEADS):
+    for i, f in enumerate(leads or LEADS):
         if np.isnan(P[i]).all():
             break
         g = (lat, lon) if prev is None else (2 * lat - prev[0], 2 * lon - prev[1])   # 직선 연장 첫 추정

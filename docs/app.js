@@ -423,7 +423,7 @@ function renderNow(latest) {
     const agency = (name, fc) => row(`${name}${fc ? `<small>${kst(fc.issued).replace(/^\d+월 /, "")} 발표 · ${Math.max(...fc.points.map(p => p[0]))}h</small>` : ""}`, c => agencyCell(fc, c, s[c]));
     return `<div class="cmp-cap"><span>주요 도시 200km 진입 예측</span><a href="${KMA_URL}" target="_blank" rel="noopener">공식 예보: 기상청</a></div><table class="cmp"><thead><tr><th></th><th scope="col" class="k-t">한국</th><th scope="col" class="j-t">일본</th></tr></thead><tbody>`
       + row("자체 모델<small>5일 내 확률</small>", c => `<td class="self">${s[c].arrived ? `${kst(s[c].arrived)} 진입` : pctCard(s[c].p)}</td>`)
-      + (s.track_own ? row(`자체 경로<small>GFS ${kst(s.track_own.cycle).replace(/^\d+월 /, "")} 발표 추적${s.track_own.turn48 != null ? ` · 48h 방향 ${s.track_own.turn48 > 0 ? "+" : ""}${s.track_own.turn48}°` : ""}</small>`, c => agencyCell(s.track_own, c, s[c])) : "")
+      + (s.track_own ? row(`자체 경로<small>GFS ${kst(s.track_own.cycle).replace(/^\d+월 /, "")} 발표 추적${s.track_own.turn48 != null ? ` · 48h 방향 ${s.track_own.turn48 > 0 ? "+" : ""}${s.track_own.turn48}°` : ""}${s.track_own.ens ? ` · 전향 2일 내 ${s.track_own.ens.p48 != null ? pct(s.track_own.ens.p48) : "–"}, 2~4일 ${s.track_own.ens.p96 != null ? pct(s.track_own.ens.p96) : "–"}(앙상블 ${s.track_own.ens.members})` : ""}</small>`, c => agencyCell(s.track_own, c, s[c])) : "")
       + agency("한국 기상청", s.forecast_kr) + agency("일본 기상청", s.forecast) + agency("미국 JTWC", s.forecast_us)
       + "</tbody></table>";
   };

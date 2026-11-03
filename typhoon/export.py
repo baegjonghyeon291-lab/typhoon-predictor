@@ -165,9 +165,17 @@ def export_recent(df, models, live=False):
                 s["forecast_us"] = us_forecast(us[s["name"].upper()])
             if s["name"].upper() in kr:
                 s["forecast_kr"] = kr_forecast(kr[s["name"].upper()])
-            own = safe_own_track(df[df.SID == s["sid"]].sort_values("time"))
+            gs = df[df.SID == s["sid"]].sort_values("time")
+            own = safe_own_track(gs)
             if own:
                 s["track_own"] = own
+                try:                                    # GEFS 앙상블 전향 확률(2~4일 뒤까지)
+                    from .gefs import live_turn
+                    turn = live_turn(gs)
+                    if turn:
+                        own["ens"] = turn
+                except Exception as ex:  # noqa: BLE001
+                    print(f"[gefs] 전향 확률 실패: {type(ex).__name__}: {ex}")
         print(f"[gfs_track] 자체 경로 {sum('track_own' in s for s in storms)}개")
     return {"generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
             "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "us_active": sorted(us), "storms": storms}

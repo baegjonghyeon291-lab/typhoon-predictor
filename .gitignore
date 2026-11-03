@@ -16,3 +16,4 @@ previews2/
 data/env/era5_features.parquet
 data/env/gfs/
 data/env/gfs_fc/
+data/env/gefs/
