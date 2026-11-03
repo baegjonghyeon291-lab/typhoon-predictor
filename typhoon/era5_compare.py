@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score, brier_score_loss
 
 from .data import load, ROOT
-from .features import add_features, add_targets, add_env, load_model, model_features, ENV_FEATURES
+from .features import add_features, add_targets, add_env, load_model, model_features, prob, ENV_FEATURES
 
 ENV = ROOT / "data" / "env"
 NCEP, ERA5 = ENV / "atmos_features.parquet", ENV / "era5_features.parquet"
@@ -44,9 +44,9 @@ def main():
             lines.append(f"\n[{country}] 검증 행 {len(n)}개, 도달/비도달이 한쪽뿐이라 AUC 계산 불가")
             continue
         full, track = load_model(country), load_model(country, full=False)
-        res = {"경로 모델": track["clf"].predict_proba(n[model_features(track)])[:, 1],
-               "환경 모델(NCEP 특성)": full["clf"].predict_proba(n[model_features(full)])[:, 1],
-               "환경 모델(ERA5 특성)": full["clf"].predict_proba(e[model_features(full)])[:, 1]}
+        res = {"경로 모델": prob(track, n[model_features(track)]),
+               "환경 모델(NCEP 특성)": prob(full, n[model_features(full)]),
+               "환경 모델(ERA5 특성)": prob(full, e[model_features(full)])}
         lines.append(f"\n[{country}] 검증 {len(n)}행, 도달 {int(n.hit.sum())}행")
         for k, p in res.items():
             lines.append(f"  {k:22s} AUC {roc_auc_score(n.hit, p):.4f}  Brier {brier_score_loss(n.hit, p):.4f}")

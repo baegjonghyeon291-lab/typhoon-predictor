@@ -54,6 +54,34 @@ def _fetch(var, year, retries=4):
     return var, year, repr(last)
 
 
+def server_last_day(year=None):
+    """서버 hgt 파일의 마지막 날짜(메타데이터만 읽음). 올해 파일이 없으면(NCEP 중단, 새해 첫날) 전년도 파일로. 실패하면 None."""
+    now = dt.datetime.utcnow().year
+    for y in ([year] if year else [now, now - 1]):
+        try:
+            with xr.open_dataset(BASE.format(var="hgt", year=y)) as ds:
+                return pd.Timestamp(ds.time.values[-1]).normalize()
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def needs_update(server_day):
+    """최근 2년 태풍 시점 중 영역 안인데 특성이 비어 있고, 필요한 날(전날)이 서버에 있는 시점이 있으면 True."""
+    if server_day is None:
+        return True
+    if not OUT.exists():
+        return True
+    df = load()
+    df = df[df["time"].dt.year >= dt.datetime.utcnow().year - 1][["SID", "time", "LAT", "LON"]]
+    f = pd.read_parquet(OUT)
+    cols = [c for c in f.columns if c.startswith("atm_")]
+    m = df.merge(f[["SID", "time"] + cols], on=["SID", "time"], how="left")
+    inside = m["LAT"].between(0, 60) & (m["LON"] % 360).between(100, 180)
+    day = m["time"].dt.normalize() - pd.Timedelta(days=1)
+    return bool((m[cols].isna().all(axis=1) & inside & (day <= server_day)).any())
+
+
 def download(years, force_years=(), workers=6):
     """years 중 캐시 없는 것(및 force_years)을 병렬로 받는다. 실패 목록 반환."""
     NCEP.mkdir(parents=True, exist_ok=True)
@@ -128,7 +156,12 @@ def _bilinear(field, ti, lat, lon, glat, glon):
 
 def features_year(year, pts):
     """pts: 해당 연도 행(LAT, LON, time). 같은 인덱스의 atm_* DataFrame 반환."""
-    dates, glat, glon, z, u, v = _open_year(year)
+    return features_from(*_open_year(year), pts)
+
+
+def features_from(dates, glat, glon, z, u, v, pts):
+    """일평균 격자(2.5°, lat 오름차순, lon 100~180E, u·v 기압면 순서는 VARS)로 atm_* 계산.
+    NCEP 재분석과 GFS 분석장(env_gfs)이 같은 계산을 쓴다."""
     # 실시간 예측과 같은 조건: 그 시점엔 당일 평균이 아직 없으니 전날 평균을 쓴다
     day = pd.to_datetime(pts["time"]).dt.normalize() - pd.Timedelta(days=1)
     ti = pd.Index(dates).get_indexer(day)          # 없는 날(올해 미래 등)은 -1
@@ -266,6 +299,12 @@ def main():
     ap.add_argument("--recent", action="store_true", help="최근 2년만 다시 받아 갱신")
     ap.add_argument("--workers", type=int, default=6)
     a = ap.parse_args()
+    if a.recent:
+        # 서버 확인도 export 의 제한시간 안에서 돈다(서버가 응답하지 않아도 강제 종료된다)
+        srv = server_last_day()
+        if not needs_update(srv):
+            print(f"[atmos] NCEP 재분석으로 새로 채울 시점 없음(서버 마지막 {srv.date()}), 받기 생략")
+            return
     build(recent=a.recent, workers=a.workers)
 
 

@@ -5,10 +5,10 @@ import pandas as pd
 from sklearn.inspection import permutation_importance
 
 from .data import load, ROOT
-from .features import add_features, add_targets, add_env, load_model, model_features, predict
+from .features import add_features, add_targets, add_env, load_model, model_features, predict, prob
 from .train import SPLIT_YEAR
 
-THRESHOLD = 0.5
+THRESHOLD = 0.4           # 보정된 확률 기준. 보정 전 0.5 기준과 헛경보 비율이 비슷하다(train.calibration)
 LEADS = [24, 48, 72, 96, 120]
 
 
@@ -22,14 +22,14 @@ def natural_lead(df, country):
 
 
 def warning_lead(df, country, full=False):
-    """검증 기간 태풍에 대해 모델이 처음 경보(확률 0.5 이상)를 낸 시점이 도착 몇 시간 전인지."""
+    """검증 기간 태풍에 대해 모델이 처음 경보(보정 확률 0.4 이상)를 낸 시점이 도착 몇 시간 전인지."""
     d = add_targets(df[df.SEASON >= SPLIT_YEAR], country)
     d = d[d.arrival.notna()].copy()
     if full:
         d["p"] = predict(country, d)[0]
     else:
         m = load_model(country, full=False)
-        d["p"] = m["clf"].predict_proba(d[model_features(m)])[:, 1]
+        d["p"] = prob(m, d[model_features(m)])
     rows = []
     for sid, g in d.groupby("SID"):
         warned = g[g.p >= THRESHOLD]

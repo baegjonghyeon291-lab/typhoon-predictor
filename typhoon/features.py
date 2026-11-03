@@ -1,4 +1,5 @@
 """한 시점의 태풍 상태로 학습 특성과 정답(도착 여부·남은 시간) 만들기."""
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -67,14 +68,24 @@ def add_targets(df, country):
     return df
 
 
-def add_env(df, files=None):
+def add_env(df, files=None, gfs=False):
     """data/env/ 의 대기 특성(env_atmos 출력)을 시점별로 붙인다. 없으면 그대로.
-    files: 다른 특성 파일(예: ERA5)로 바꿔 붙일 때 파일명 또는 경로 목록."""
+    files: 다른 특성 파일(예: ERA5)로 바꿔 붙일 때 파일명 또는 경로 목록.
+    gfs: 재분석이 없는 시점(2026-03-17 이후 등)을 GFS 분석장으로 채우고 env_src 열에 출처를 남긴다(네트워크 사용, env_gfs)."""
     for f in (files or ENV_FILES):
         p = Path(f) if Path(f).is_absolute() else ROOT / "data" / "env" / f
         if p.exists():
             env = pd.read_parquet(p)
             df = df.merge(env.drop_duplicates(["SID", "time"]), on=["SID", "time"], how="left")
+    if gfs:
+        df = df.copy()
+        raw = [c for c in df.columns if c.startswith("atm_")]
+        df["env_src"] = np.where(df[raw].notna().any(axis=1), "ncep", None) if raw else None
+        try:                                 # GFS 는 보충 자료다. 실패해도 갱신은 재분석·경로 모델로 이어간다
+            from .env_gfs import fill
+            df = fill(df)
+        except Exception as e:  # noqa: BLE001
+            warnings.warn(f"GFS 보충 실패, 있는 자료로 이어감: {type(e).__name__}: {e}", RuntimeWarning)
     if "atm_z500" in df:
         df["atm_dz_ew"] = df.atm_z500_e - df.atm_z500_w
         df["atm_dz_n"] = df.atm_z500_n - df.atm_z500
@@ -113,17 +124,45 @@ def load_model(country, full=True):
     return _read_model(ROOT / "models" / f"{country}.joblib")
 
 
-def predict(country, d):
-    """도달 확률과 남은 시간. 환경 자료가 있는 시점은 환경 모델, 없으면(최근 재분석 미갱신 등) 경로 모델."""
+def prob(m, X):
+    """도달 확률. 모델에 Platt 보정(calib = [a, b])이 있으면 sigmoid(a·트리 점수 + b)."""
+    if "calib" not in m:
+        return m["clf"].predict_proba(X)[:, 1]
+    a, b = m["calib"]
+    return 1 / (1 + np.exp(-(a * m["clf"].decision_function(X) + b)))
+
+
+def _by_model(country, d):
+    """(모델, 특성, 행 마스크) 목록. 환경 자료가 있는 시점은 환경 모델, 없으면(최근 재분석 미갱신 등) 경로 모델."""
     track = load_model(country, full=False)
-    p = track["clf"].predict_proba(d[FEATURES])[:, 1]
-    h = track["reg"].predict(d[FEATURES])
+    out = [(track, FEATURES, np.ones(len(d), bool))]
     full = load_model(country)
     feats = model_features(full)
     env = [c for c in ENV_FEATURES if c in feats]
     if env and all(c in d.columns for c in feats):      # 환경 parquet 이 없으면 경로 모델만
         has = d[env].notna().any(axis=1).to_numpy()
         if has.any():
-            p[has] = full["clf"].predict_proba(d.loc[has, feats])[:, 1]
-            h[has] = full["reg"].predict(d.loc[has, feats])
+            out[0][2][has] = False
+            out.append((full, feats, has))
+    return out
+
+
+def predict(country, d):
+    """도달 확률과 남은 시간."""
+    p, h = np.zeros(len(d)), np.zeros(len(d))
+    for m, feats, mask in _by_model(country, d):
+        if mask.any():
+            p[mask] = prob(m, d.loc[mask, feats])
+            h[mask] = m["reg"].predict(d.loc[mask, feats])
     return p, h
+
+
+def predict_range(country, d):
+    """남은 시간의 80% 범위(하위·상위). 10%·90% 분위 모델에 교차 예측으로 맞춘 폭 보정(delta)을 더한다.
+    범위 모델이 없는 예전 모델 파일이면 NaN."""
+    lo, hi = np.full(len(d), np.nan), np.full(len(d), np.nan)
+    for m, feats, mask in _by_model(country, d):
+        if mask.any() and "lo" in m:
+            lo[mask] = np.maximum(m["lo"].predict(d.loc[mask, feats]) - m["delta"], 0)
+            hi[mask] = m["hi"].predict(d.loc[mask, feats]) + m["delta"]
+    return lo, hi

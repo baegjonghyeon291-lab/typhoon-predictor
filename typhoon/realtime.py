@@ -20,19 +20,25 @@ OUT_COLS = ["SID", "SEASON", "NAME", "ISO_TIME", "LAT", "LON", "DIST2LAND", "TOK
             "dist_korea", "in_korea", "dist_japan", "in_japan"]
 
 
+FEED_OK = None      # 마지막 피드 받기 결과. export 가 latest.json 에 남겨, 사이트가 '태풍 없음'과 '자료를 못 받음'을 구분한다
+
+
 def _warn(msg):
     warnings.warn(f"[realtime] {msg}", RuntimeWarning, stacklevel=2)
 
 
 def _download_new():
     """피드의 새 전문을 data/jma/xml 에 저장. 실패하면 경고만."""
+    global FEED_OK
     import requests
     jma.XML_DIR.mkdir(parents=True, exist_ok=True)
     try:
         entries = jma.fetch_feed()
     except Exception as e:  # noqa: BLE001
+        FEED_OK = False
         _warn(f"JMA 피드 접속/파싱 실패: {type(e).__name__}")
         return
+    FEED_OK = True
     for _, url in entries:
         p = jma.XML_DIR / url.rsplit("/", 1)[-1]
         if p.exists():
@@ -42,7 +48,10 @@ def _download_new():
             if r.status_code == 200:
                 p.write_bytes(r.content)
                 time.sleep(0.2)
+            else:
+                FEED_OK = False
         except Exception as e:  # noqa: BLE001
+            FEED_OK = False
             _warn(f"전문 받기 실패({p.name}): {type(e).__name__}")
 
 
@@ -151,6 +160,8 @@ def fetch_recent(ibtracs_df, download=True):
         r = r[OUT_COLS].drop_duplicates(["SID", "time"]).sort_values(["SID", "time"]).reset_index(drop=True)
         return r
     except Exception as e:  # noqa: BLE001
+        global FEED_OK
+        FEED_OK = False
         _warn(f"실시간 보충 실패: {type(e).__name__}: {e}")
         return ibtracs_df.iloc[0:0].copy()
 

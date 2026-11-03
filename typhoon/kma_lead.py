@@ -214,6 +214,7 @@ def main():
         ],
     }
     OUT.write_text(json.dumps(out, indent=2, ensure_ascii=False, default=str))
+    (ROOT / "docs" / "data" / "kma_lead.json").write_text(OUT.read_text())     # 사이트가 읽는 사본
     per = KMA / "kma_lead_per_storm.csv"
     t.to_csv(per, index=False)
     print(json.dumps(out, indent=2, ensure_ascii=False, default=str))

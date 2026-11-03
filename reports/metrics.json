@@ -1,42 +1,74 @@
 {
   "korea": {
-    "auc": 0.9072,
-    "brier": 0.0357,
-    "arrival_mae_h": 14.6,
+    "auc": 0.9106,
+    "brier": 0.0343,
+    "brier_uncalibrated": 0.035,
+    "calib": [
+      0.7845,
+      -0.2703
+    ],
+    "arrival_mae_h": 14.4,
+    "arrival_range80_coverage": 0.741,
+    "arrival_range80_median_width_h": 40.0,
+    "arrival_range_delta_h": 2.56,
     "train_rows": 77616,
-    "test_rows": 11731,
+    "test_rows": 11775,
     "test_storms_hit": 28,
     "n_features": 18
   },
   "japan": {
-    "auc": 0.9011,
-    "brier": 0.0824,
-    "arrival_mae_h": 15.9,
+    "auc": 0.9063,
+    "brier": 0.08,
+    "brier_uncalibrated": 0.0803,
+    "calib": [
+      0.9111,
+      -0.0719
+    ],
+    "arrival_mae_h": 15.6,
+    "arrival_range80_coverage": 0.792,
+    "arrival_range80_median_width_h": 48.7,
+    "arrival_range_delta_h": 3.29,
     "train_rows": 72437,
-    "test_rows": 10754,
-    "test_storms_hit": 90,
+    "test_rows": 10797,
+    "test_storms_hit": 91,
     "n_features": 18
   },
   "full": {
     "korea": {
-      "auc": 0.9113,
-      "brier": 0.036,
-      "arrival_mae_h": 14.8,
+      "auc": 0.9124,
+      "brier": 0.0339,
+      "brier_uncalibrated": 0.034,
+      "calib": [
+        0.7881,
+        -0.2248
+      ],
+      "arrival_mae_h": 14.5,
+      "arrival_range80_coverage": 0.779,
+      "arrival_range80_median_width_h": 41.5,
+      "arrival_range_delta_h": 3.3,
       "train_rows": 77616,
-      "test_rows": 11731,
+      "test_rows": 11775,
       "test_storms_hit": 28,
       "n_features": 28,
-      "env_rows_ratio": 0.926
+      "env_rows_ratio": 0.922
     },
     "japan": {
-      "auc": 0.9069,
-      "brier": 0.0805,
-      "arrival_mae_h": 16.0,
+      "auc": 0.9086,
+      "brier": 0.0793,
+      "brier_uncalibrated": 0.0829,
+      "calib": [
+        0.9224,
+        -0.0519
+      ],
+      "arrival_mae_h": 16.1,
+      "arrival_range80_coverage": 0.792,
+      "arrival_range80_median_width_h": 49.0,
+      "arrival_range_delta_h": 3.62,
       "train_rows": 72437,
-      "test_rows": 10754,
-      "test_storms_hit": 90,
+      "test_rows": 10797,
+      "test_storms_hit": 91,
       "n_features": 28,
-      "env_rows_ratio": 0.928
+      "env_rows_ratio": 0.924
     }
   }
 }
