@@ -78,8 +78,8 @@ const LV = [
 const lvLabel = i => i ? `${i}단계` : LV[0].name;
 const NO_LV = "#14213d";
 const US_LINE = "#0b8a5f";
-const OWN_LINE = "#c8187f";
-const KR_LINE = "#8a5a00";    // 한국 기상청 예보   // 자체 경로(GFS 중심 추적)
+const OWN_LINE = "#c8187f";    // 자체 경로(GFS 중심 추적)
+const KR_LINE = "#8a5a00";     // 한국 기상청 예보
 function lvIndex(kt, grade) {
   if (kt != null) return kt < 34 ? 0 : kt < 48 ? 1 : kt < 64 ? 2 : kt < 85 ? 3 : kt < 105 ? 4 : 5;
   return grade === 3 ? 1 : grade === 4 ? 2 : grade === 5 ? 3 : 0;
@@ -666,7 +666,7 @@ function renderHistory(history, damage, review = {}) {
   function turnLine(r) {
     if (!r || !r.turn) return "";
     const who = (name, v) => v === "none" ? null : `${name} ${v ? `${kst(v.t)}(${v.lead_h}시간 전)` : "예측 없음"}`;
-    const parts = [who("기상청", r.kma), who("자체 경로", r.own), who("자체 분류", r.clf)].filter(Boolean);
+    const parts = [who("기상청", r.kma), who("자체 경로", r.own), who("자체 분류(48시간)", r.clf)].filter(Boolean);
     return `<span class="h-why">전향 시작 ${kst(r.turn)} · 첫 전향 예측: ${parts.join(" · ")}</span>`;
   }
 

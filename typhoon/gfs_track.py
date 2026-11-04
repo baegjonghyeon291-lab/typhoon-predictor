@@ -42,7 +42,8 @@ def cycle_for(t):
     return (pd.Timestamp(t) - pd.Timedelta(hours=AVAIL_H)).floor("12h")
 
 
-def _decode(msg):
+def decode_prmsl(msg, shape=(360, 181)):
+    """PRMSL GRIB 메시지 → 1° 격자(LAT, LON) 해면기압(hPa). shape(Ni, Nj)가 더 촘촘하면 정수 도 격자점만 고른다."""
     import eccodes
     with _ECC:
         h = eccodes.codes_new_from_message(msg)
@@ -52,7 +53,9 @@ def _decode(msg):
             v = eccodes.codes_get_values(h).reshape(nj, ni)
         finally:
             eccodes.codes_release(h)
-    assert name == "prmsl" and (ni, nj) == (360, 181), (name, ni, nj)
+    assert name == "prmsl" and (ni, nj) == shape, (name, ni, nj)
+    step = ni // 360
+    v = v[::step, ::step]
     y0 = int(90 - LAT[-1])                        # 위도 90→-90
     return v[y0:y0 + len(LAT), int(LON[0]):int(LON[0]) + len(LON)][::-1].astype(np.float32) / 100   # hPa
 
@@ -69,17 +72,21 @@ def _fetch(sess, c, f):
     n = struct.unpack(">Q", b[8:16])[0]          # GRIB2 전체 길이
     if n > len(b):
         b = sess.get(url, headers={"Range": f"bytes=0-{n - 1}"}, timeout=60).content
-    return _decode(b[:n])
+    return decode_prmsl(b[:n])
 
 
 def _path(c):
     return DIR / f"{c:%Y%m%d%H}.npz"
 
 
+RECENT_H = 48                             # 이보다 새 발표의 빠진 파일은 아직 안 올라온 것으로 보고 저장하지 않는다
+
+
 def fetch_cycle(sess, c, retries=3):
     p = _path(c)
     if p.exists():
         return "cached"
+    recent = pd.Timestamp.now("UTC").tz_localize(None) - c < pd.Timedelta(hours=RECENT_H)
     out = np.full((len(LEADS), len(LAT), len(LON)), np.nan, np.float32)
     for i, f in enumerate(LEADS):
         for k in range(retries):
@@ -91,7 +98,7 @@ def fetch_cycle(sess, c, retries=3):
                     return "failed"
                 time.sleep(2 * (k + 1))
         if v is None:
-            if f == 0:
+            if f == 0 or recent:
                 return "missing"
             continue
         out[i] = v

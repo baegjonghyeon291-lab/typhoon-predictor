@@ -387,9 +387,12 @@ def latest(now=None, year=None):
         d = d.dropna(subset=["SEQ", "TMD", "LAT", "LON"])
         if d.empty:
             continue
-        s = d[d.SEQ == d.SEQ.max()].sort_values("TMD")
-        a, f = s[s.FT == 0], s[(s.FT == 1) & (s.TMD > 0)]
-        if a.empty or f.empty:
+        for seq in sorted(d.SEQ.unique(), reverse=True):      # 분석만 있는 발표는 건너뛰고 예보가 있는 가장 최근 발표
+            s = d[d.SEQ == seq].sort_values("TMD")
+            a, f = s[s.FT == 0], s[(s.FT == 1) & (s.TMD > 0)]
+            if len(a) and len(f):
+                break
+        else:
             continue
         tm = pd.to_datetime(str(a.TYP_TM.iloc[0]), format="%Y%m%d%H%M")
         out[str(t.TYP_EN).strip().upper()] = {

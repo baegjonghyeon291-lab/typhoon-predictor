@@ -34,11 +34,12 @@ USA_TO_10MIN = 0.88      # 미국 1분 평균 풍속 → 10분 평균 근사(WMO
 
 
 def display_wind(g):
-    """표시용 풍속(kt): 일본 기상청(10분 평균)이 없으면 미국 1분 평균 × 0.88. 모델 입력(wind)은 바꾸지 않는다.
-    → (풍속 Series, 미국 환산을 쓴 점이 있는지)."""
+    """표시용 풍속(kt): 태풍 전체에 일본 기상청(10분 평균) 풍속이 하나도 없을 때만 미국 1분 평균 × 0.88.
+    일본 값이 있는 태풍에 점 단위로 섞으면 일본 자료 밖 구간 때문에 최대 풍속과 단계가 올라간다.
+    모델 입력(wind)은 바꾸지 않는다. → (풍속 Series, 미국 환산을 썼는지)."""
     usa = g["USA_WIND"] * USA_TO_10MIN if "USA_WIND" in g else pd.Series(np.nan, index=g.index)
-    w = g.wind.where(g.wind.notna(), usa)
-    return w, bool((g.wind.isna() & usa.notna()).any())
+    used = bool(g.wind.isna().all() and usa.notna().any())
+    return (usa if used else g.wind), used
 
 
 def track(g, extra=()):

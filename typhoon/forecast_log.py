@@ -150,9 +150,12 @@ def score_sources(rows, df, data_end):
         seen, judged, errs = set(), [], {h: [] for h in ERR_H}
         for r in rows:
             f = _source_forecast(r, k)
-            if not f or (r["sid"], f["issued"]) in seen:
+            if not f:
                 continue
-            seen.add((r["sid"], f["issued"]))
+            issue = (r["sid"], f.get("cycle") or f["issued"])   # 자체 경로의 issued는 관측 시각이라 GFS 발표(cycle)로 묶는다
+            if issue in seen:
+                continue
+            seen.add(issue)
             sid = _resolve(r, df)
             if sid is None:
                 continue
