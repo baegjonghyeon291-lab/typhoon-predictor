@@ -352,3 +352,51 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------- 실시간(자동 갱신)
+def latest(now=None, year=None):
+    """올해 활동 중(NOW=1)인 태풍의 가장 최근 기상청 발표를 영문 이름별로.
+    {name: {"issued", "time", "lat", "lon", "seq", "points": [[예보 시간, 위도, 경도, 최대풍속 m/s]]}} (시각은 UTC).
+    키가 없거나 받지 못하면 빈 사전(갱신은 이어 간다). 예보 이력은 API허브에 남으므로 따로 쌓지 않아도 된다."""
+    from ._env import get_key, load_env
+    load_env()
+    key = get_key("KMA_APIHUB_KEY")
+    if not key:
+        print("[kma] 키 없음, 건너뜀")
+        return {}
+    year = year or (now or dt.datetime.utcnow()).year
+    try:
+        lst = parse_hub_text(requests.get(f"{HUB}/typ_lst.php", params={"YY": year, "disp": 1, "help": 0, "authKey": key},
+                                          timeout=60).text, HUB_LST_COLS, "REM")
+    except requests.RequestException as e:
+        print(f"[kma] 목록 실패: {type(e).__name__}")
+        return {}
+    out = {}
+    for _, t in lst[lst.NOW.astype(str) == "1"].iterrows():
+        try:
+            r = requests.get(f"{HUB}/typ_data.php", params={"YY": year, "typ": int(t.SEQ), "mode": 3, "disp": 1, "help": 0,
+                                                            "authKey": key}, timeout=60)
+            r.raise_for_status()
+        except requests.RequestException as e:
+            print(f"[kma] {t.TYP_EN} 실패: {type(e).__name__}")
+            continue
+        d = parse_hub_text(r.text, HUB_DATA_COLS, "LOC")
+        for c in ["FT", "SEQ", "TMD", "LAT", "LON", "WS"]:
+            d[c] = pd.to_numeric(d[c], errors="coerce")
+        d = d.dropna(subset=["SEQ", "TMD", "LAT", "LON"])
+        if d.empty:
+            continue
+        for seq in sorted(d.SEQ.unique(), reverse=True):      # 분석만 있는 발표는 건너뛰고 예보가 있는 가장 최근 발표
+            s = d[d.SEQ == seq].sort_values("TMD")
+            a, f = s[s.FT == 0], s[(s.FT == 1) & (s.TMD > 0)]
+            if len(a) and len(f):
+                break
+        else:
+            continue
+        tm = pd.to_datetime(str(a.TYP_TM.iloc[0]), format="%Y%m%d%H%M")
+        out[str(t.TYP_EN).strip().upper()] = {
+            "issued": tm, "time": tm, "lat": float(a.LAT.iloc[0]), "lon": float(a.LON.iloc[0]), "seq": int(s.SEQ.iloc[0]),
+            "points": [[int(r.TMD), float(r.LAT), float(r.LON), None if pd.isna(r.WS) or r.WS < 0 else int(r.WS)]
+                       for r in f.itertuples()]}
+    return out

@@ -34,14 +34,15 @@ def _read():
 
 def append(latest):
     """export_recent 결과(latest.json 객체)에서 활동 중이고 예보가 있는 태풍을 기록. 새로 쓴 줄 수 반환."""
-    seen = {(r.get("sid"), r.get("name"), r.get("issued"), (r.get("us") or {}).get("issued")) for r in _read()}
+    seen = {(r.get("sid"), r.get("name"), r.get("issued"), (r.get("us") or {}).get("issued"), (r.get("own") or {}).get("cycle"),
+             (r.get("kr") or {}).get("issued")) for r in _read()}
     new = []
     for s in latest.get("storms", []):
-        fc, us = s.get("forecast"), s.get("forecast_us")
+        fc, us, own, kr = s.get("forecast"), s.get("forecast_us"), s.get("track_own"), s.get("forecast_kr")
         fc = fc if fc and "approach" in fc else {}        # 일본·미국 중 하나만 있어도, 어느 쪽이든 새 발표면 남긴다
-        if s.get("end") != latest.get("data_until") or not (fc or us):
+        if s.get("end") != latest.get("data_until") or not (fc or us or own or kr):
             continue
-        key = (s["sid"], s["name"], fc.get("issued"), (us or {}).get("issued"))
+        key = (s["sid"], s["name"], fc.get("issued"), (us or {}).get("issued"), (own or {}).get("cycle"), (kr or {}).get("issued"))
         if key in seen:
             continue
         last = s["track"][-1]
@@ -49,7 +50,7 @@ def append(latest):
                     "position": {"time": last[0], "lat": last[1], "lon": last[2]},
                     "points": fc.get("points"), "approach": fc.get("approach"), "env": s.get("env"),
                     "model": {c: s[c] for c in COUNTRIES if c in s},   # 확률·도착 시간과 근거(why)
-                    "inputs": s.get("inputs"), "us": us})
+                    "inputs": s.get("inputs"), "us": us, "own": own, "kr": kr})   # own: GFS 추적 자체 경로(gfs_track.own_track)
         seen.add(key)
     if new:
         LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -124,9 +125,65 @@ def check(df=None, refresh=True):
                           "center_miss": int((~x.fc_center & y).sum()),
                           "cone_hit": int((x.fc_cone & y).sum()), "cone_false": int((x.fc_cone & ~y).sum()),
                           "median_center_err_h": float(x.center_err_h.dropna().median()) if x.center_err_h.notna().any() else None}
-    CHECK.write_text(json.dumps({"summary": summary, "rows": out}, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
-    print(json.dumps(summary, ensure_ascii=False, indent=1))
+    sources = score_sources(rows, df, data_end)
+    CHECK.write_text(json.dumps({"summary": summary, "sources": sources, "rows": out}, ensure_ascii=False, indent=1,
+                                default=str), encoding="utf-8")
+    print(json.dumps({"summary": summary, "sources": sources}, ensure_ascii=False, indent=1))
     return summary
+
+
+SOURCES = {"jma": "일본 기상청", "us": "미국 JTWC", "kr": "한국 기상청", "own": "자체 경로"}
+ERR_H = (24, 48, 72)
+
+
+def _source_forecast(r, k):
+    """기록 한 줄에서 출처 k의 예보 {issued, points, approach}. 일본은 줄 자체, 나머지는 하위 칸."""
+    f = {"issued": r.get("issued"), "points": r.get("points"), "approach": r.get("approach")} if k == "jma" else r.get(k)
+    return f if f and f.get("issued") and f.get("points") else None
+
+
+def score_sources(rows, df, data_end):
+    """출처마다 같은 기준으로: 영향권 중심 진입 판정(적중·헛판정·놓침, 나라별)과 24·48·72시간 위치 오차(km).
+    같은 발표는 한 번만 센다. 예보 시간은 발표 시각 기준(미국은 위치 기준 시각이 발표보다 약 3시간 앞이라 근사)."""
+    out = {}
+    for k, label in SOURCES.items():
+        seen, judged, errs = set(), [], {h: [] for h in ERR_H}
+        for r in rows:
+            f = _source_forecast(r, k)
+            if not f:
+                continue
+            issue = (r["sid"], f.get("cycle") or f["issued"])   # 자체 경로의 issued는 관측 시각이라 GFS 발표(cycle)로 묶는다
+            if issue in seen:
+                continue
+            seen.add(issue)
+            sid = _resolve(r, df)
+            if sid is None:
+                continue
+            g = df[df.SID == sid].set_index("time")
+            base, t0 = pd.Timestamp(f["issued"]), pd.Timestamp(r["position"]["time"])
+            if not (data_end >= base + pd.Timedelta(hours=120) or g.index.max() < data_end - pd.Timedelta(days=3)):
+                continue                                  # 태풍이 아직 안 끝남
+            for p in f["points"]:
+                h = int(p[0])
+                if h in errs and base + pd.Timedelta(hours=h) in g.index:
+                    o = g.loc[base + pd.Timedelta(hours=h)]
+                    errs[h].append(float(haversine(p[1], p[2], o.LAT, o.LON)))
+            for c in COUNTRIES:
+                a = (f.get("approach") or {}).get(c)
+                if a is None or g[(g.index <= t0) & g[f"in_{c}"]].size:
+                    continue                              # 판정 없음, 또는 이미 영향권 안
+                span = max(int(p[0]) for p in f["points"])
+                hit = g[(g.index > t0) & g[f"in_{c}"]].index
+                arrived = len(hit) and hit.min() <= base + pd.Timedelta(hours=span)
+                judged.append((c, a.get("center") is not None, bool(arrived)))
+        s = {"label": label, "issues": len(seen)}
+        for c in COUNTRIES:
+            j = [(fc, y) for cc, fc, y in judged if cc == c]
+            s[c] = {"judged": len(j), "hit": sum(fc and y for fc, y in j), "false": sum(fc and not y for fc, y in j),
+                    "miss": sum(y and not fc for fc, y in j)}
+        s["track_error_km"] = {f"{h}h": {"n": len(v), "mean": round(float(np.mean(v))) if v else None} for h, v in errs.items()}
+        out[k] = s
+    return out
 
 
 if __name__ == "__main__":

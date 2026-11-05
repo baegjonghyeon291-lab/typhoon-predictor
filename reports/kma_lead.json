@@ -165,6 +165,15 @@
         "warned_96h_before": 0.444,
         "warned_120h_before": 0.111,
         "never_forecast_ratio": 0.111
+      },
+      "scores": {
+        "warned_storms": 34,
+        "false_alarm_ratio": 0.294,
+        "entry_mae_h": 5.0,
+        "entry_bias_h": -3.3,
+        "entry_issues": 358,
+        "entry_storms": 24,
+        "definition": "예보 진로 1시간 보간, 한국 6개 도시 200km. 진입 시각 오차는 진입을 예측한 발표만(자체 모델은 도착 120시간 안 모든 시점)."
       }
     },
     "eff123_storms_total": 78,
@@ -178,6 +187,62 @@
     "warned_72h_before": 0.179,
     "warned_96h_before": 0.071,
     "warned_120h_before": 0.071
+  },
+  "kma_track_error": {
+    "since_2015": {
+      "24h": {
+        "n": 5677,
+        "mean_km": 86,
+        "median_km": 70
+      },
+      "48h": {
+        "n": 4672,
+        "mean_km": 140,
+        "median_km": 115
+      },
+      "72h": {
+        "n": 3763,
+        "mean_km": 213,
+        "median_km": 171
+      },
+      "96h": {
+        "n": 2892,
+        "mean_km": 299,
+        "median_km": 235
+      },
+      "120h": {
+        "n": 2173,
+        "mean_km": 408,
+        "median_km": 333
+      }
+    },
+    "since_2024": {
+      "24h": {
+        "n": 1482,
+        "mean_km": 70,
+        "median_km": 58
+      },
+      "48h": {
+        "n": 1220,
+        "mean_km": 113,
+        "median_km": 94
+      },
+      "72h": {
+        "n": 982,
+        "mean_km": 172,
+        "median_km": 142
+      },
+      "96h": {
+        "n": 741,
+        "mean_km": 263,
+        "median_km": 199
+      },
+      "120h": {
+        "n": 528,
+        "mean_km": 381,
+        "median_km": 276
+      }
+    }
   },
   "eff_vs_in_korea": {
     "matched_storms": 636,

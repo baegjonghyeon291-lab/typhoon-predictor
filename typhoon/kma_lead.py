@@ -111,6 +111,56 @@ def fcst_korea_issue(g, interp=False):
     return pd.NaT, None
 
 
+def issue_entries(f):
+    """발표마다 1시간 보간 예보 진로가 한국 영향권(도시 200km)에 처음 드는 시각. 안 들면 NaT."""
+    rows = []
+    for (yy, typ, seq), s in f.dropna(subset=["LAT", "LON", "TMD"]).groupby(["YY", "TYP", "SEQ"]):
+        a = s.sort_values("TMD").drop_duplicates("TMD")
+        issued = a.TYP_TM.iloc[0]
+        entry = pd.NaT
+        if len(a) >= 2:
+            hh = np.arange(a.TMD.min(), a.TMD.max() + 1)
+            ok = kma_min_dist(np.interp(hh, a.TMD, a.LAT), np.interp(hh, a.TMD, a.LON)) <= RADIUS_KM
+            if ok.any():
+                entry = issued + pd.Timedelta(hours=float(hh[ok.argmax()]))
+        rows.append((yy, typ, seq, issued, entry))
+    return pd.DataFrame(rows, columns=["YY", "TYP", "SEQ", "issued", "entry"])
+
+
+def kma_scores(t, f, since=SPLIT_YEAR):
+    """자체 모델과 같은 기준의 기상청 성적(since년~).
+    빗나간 도달 예측: 도착 전(안 왔으면 언제든) 예보 진로가 영향권에 든 적 있는 태풍 중 끝내 안 온 비율.
+    진입 시각 오차: 도착 120시간 안에 나온 발표 중 진입을 예측한 발표의 |예측 진입 − 실제 도착| 평균."""
+    e = issue_entries(f[f.YY >= since]).merge(t[["YY", "TYP", "SID", "arrival"]], on=["YY", "TYP"]).dropna(subset=["SID"])
+    before = e[e.arrival.isna() | (e.issued < e.arrival)]
+    warned = before.groupby("SID").agg(warned=("entry", lambda x: x.notna().any()), arrival=("arrival", "first"))
+    warned = warned[warned.warned]
+    lead = (before.arrival - before.issued).dt.total_seconds() / 3600
+    w = before[before.entry.notna() & before.arrival.notna() & (lead <= 120)]
+    err = ((w.entry - w.arrival).dt.total_seconds() / 3600)
+    return {"warned_storms": int(len(warned)),
+            "false_alarm_ratio": round(float(warned.arrival.isna().mean()), 3) if len(warned) else None,
+            "entry_mae_h": round(float(err.abs().mean()), 1) if len(w) else None,
+            "entry_bias_h": round(float(err.mean()), 1) if len(w) else None,
+            "entry_issues": int(len(w)), "entry_storms": int(w.SID.nunique()),
+            "definition": "예보 진로 1시간 보간, 한국 6개 도시 200km. 진입 시각 오차는 진입을 예측한 발표만(자체 모델은 도착 120시간 안 모든 시점)."}
+
+
+def kma_track_error(t, f, df, since=SPLIT_YEAR, leads=(24, 48, 72, 96, 120)):
+    """기상청 예보 위치와 IBTrACS 실제 위치의 거리(km), 예보 시간별 평균·중앙값."""
+    p = f[(f.YY >= since) & (f.FT == 1) & f.TMD.isin(leads)].dropna(subset=["LAT", "LON"])
+    p = p.assign(valid=p.TYP_TM + pd.to_timedelta(p.TMD, unit="h")).merge(t[["YY", "TYP", "SID"]], on=["YY", "TYP"])
+    p = p.merge(df[["SID", "time", "LAT", "LON"]].rename(columns={"time": "valid", "LAT": "lat_o", "LON": "lon_o"}),
+                on=["SID", "valid"])
+    p["err"] = haversine(p.LAT, p.LON, p.lat_o, p.lon_o)
+    out = {}
+    for start in (since, 2024):
+        q = p[p.YY >= start]
+        out[f"since_{start}"] = {f"{h}h": {"n": int(len(g)), "mean_km": round(float(g.err.mean())), "median_km": round(float(g.err.median()))}
+                                 for h, g in q.groupby("TMD")}
+    return out
+
+
 def main():
     lst, f = load_kma()
     df = load(start_year=lst.YY.min() - 1)
@@ -169,7 +219,7 @@ def main():
     korea = {
         "definition": "도착 = IBTrACS 에서 한국 6개 도시 200km 안 첫 시각(in_korea). 대상 = in_korea 태풍 중 매칭 성공·도착 전 기록 있음.",
         "all_years": block(hit),
-        f"since_{SPLIT_YEAR}_same_as_model": block(hit[hit.YY >= SPLIT_YEAR]),
+        f"since_{SPLIT_YEAR}_same_as_model": {**block(hit[hit.YY >= SPLIT_YEAR]), "scores": kma_scores(t, f)},
         "eff123_storms_total": int(len(eff_hit)),
         "eff123_and_in_korea": int(len(hit[hit.EFF.isin([1, 2, 3])])),
     }
@@ -206,6 +256,7 @@ def main():
         "kma_first_issue_vs_jma_first_record": first_vs_jma,
         "korea_lead": korea,
         "our_model_korea_full": model,
+        "kma_track_error": kma_track_error(t, f, df),
         "eff_vs_in_korea": agree,
         "notes": [
             "기상청 발표 시각은 TYP_TM(분석시각, UTC). 실제 공개 시각은 이보다 늦다.",

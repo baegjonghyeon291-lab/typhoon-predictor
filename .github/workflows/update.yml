@@ -22,10 +22,17 @@ jobs:
       # GFS 분석장 하루 평균 캐시(data/env/gfs, git에 없음). 매번 새 키로 저장하고 가장 최근 것을 복원
       - uses: actions/cache@v4
         with:
-          path: data/env/gfs
+          path: |
+            data/env/gfs
+            data/env/gfs_fc
+            data/env/gefs
           key: gfs-${{ github.run_id }}
           restore-keys: gfs-
+      # GEFS는 발표당 약 10MB라 지금 쓰는 발표만 남긴다
+      - run: if [ -d data/env/gefs ]; then find data/env/gefs -mindepth 1 -maxdepth 1 -mtime +1 -exec rm -rf {} +; fi
       - run: python -m typhoon.export --update
+        env:
+          KMA_APIHUB_KEY: ${{ secrets.KMA_APIHUB_KEY }}   # 없으면 기상청 예보만 빠진다
       - name: 변경 사항 커밋
         run: |
           git config user.name "github-actions[bot]"

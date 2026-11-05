@@ -78,6 +78,8 @@ const LV = [
 const lvLabel = i => i ? `${i}단계` : LV[0].name;
 const NO_LV = "#14213d";
 const US_LINE = "#0b8a5f";
+const OWN_LINE = "#c8187f";    // 자체 경로(GFS 중심 추적)
+const KR_LINE = "#8a5a00";     // 한국 기상청 예보
 function lvIndex(kt, grade) {
   if (kt != null) return kt < 34 ? 0 : kt < 48 ? 1 : kt < 64 ? 2 : kt < 85 ? 3 : kt < 105 ? 4 : 5;
   return grade === 3 ? 1 : grade === 4 ? 2 : grade === 5 ? 3 : 0;
@@ -127,7 +129,7 @@ function baseMap(id, center = [30, 130], zoom = 4, { forecast = false } = {}) {
     const d = L.DomUtil.create("details", "tc-legend");
     d.open = legendOpen;
     d.innerHTML = `<summary>범례</summary>` + LV.map((l, i) => `<div><i style="background:${l.color}"></i>${i ? `${i}단계 ` : ""}${l.name}</div>`).join("") + `<div><i style="background:${NO_LV}"></i>강도 기록 없음</div>`
-      + (forecast ? `<div class="sep"><i class="lg-line"></i>일본 기상청 예보</div><div><i class="lg-cone"></i>일본 예보 오차 범위(70%)</div><div><i class="lg-line us"></i>미국 JTWC 예보</div>` : "");
+      + (forecast ? `<div class="sep"><i class="lg-line"></i>일본 기상청 예보</div><div><i class="lg-cone"></i>일본 예보 오차 범위(70%)</div><div><i class="lg-line us"></i>미국 JTWC 예보</div><div><i class="lg-line kr"></i>한국 기상청 예보</div><div><i class="lg-line own"></i>자체 경로(GFS 추적)</div>` : "");
     L.DomEvent.disableClickPropagation(d);
     return d;
   };
@@ -355,7 +357,7 @@ function renderNow(latest) {
   const stormBounds = (s, live) => {
     const pts = s.track.map(t => [t[1], t[2]]);
     if (!live) return L.latLngBounds(pts);
-    return L.latLngBounds([...pts, ...[...(s.forecast?.points || []), ...(s.forecast_us?.points || [])].map(p => [p[1], p[2]]), ...KOREA_CITIES, ...JAPAN_CITIES]);
+    return L.latLngBounds([...pts, ...[...(s.forecast?.points || []), ...(s.forecast_us?.points || []), ...(s.track_own?.points || []), ...(s.forecast_kr?.points || [])].map(p => [p[1], p[2]]), ...KOREA_CITIES, ...JAPAN_CITIES]);
   };
   const scrollToEl = (e, off = document.querySelector(".top").offsetHeight) => window.scrollTo({ top: e.getBoundingClientRect().top + scrollY - off, behavior: REDUCED ? "auto" : "smooth" });
   const toMap = () => { if (!wide()) scrollToEl(mapEl); };
@@ -421,7 +423,8 @@ function renderNow(latest) {
     const agency = (name, fc) => row(`${name}${fc ? `<small>${kst(fc.issued).replace(/^\d+월 /, "")} 발표 · ${Math.max(...fc.points.map(p => p[0]))}h</small>` : ""}`, c => agencyCell(fc, c, s[c]));
     return `<div class="cmp-cap"><span>주요 도시 200km 진입 예측</span><a href="${KMA_URL}" target="_blank" rel="noopener">공식 예보: 기상청</a></div><table class="cmp"><thead><tr><th></th><th scope="col" class="k-t">한국</th><th scope="col" class="j-t">일본</th></tr></thead><tbody>`
       + row("자체 모델<small>5일 내 확률</small>", c => `<td class="self">${s[c].arrived ? `${kst(s[c].arrived)} 진입` : pctCard(s[c].p)}</td>`)
-      + agency("일본 기상청", s.forecast) + agency("미국 JTWC", s.forecast_us)
+      + (s.track_own ? row(`자체 경로<small>GFS ${kst(s.track_own.cycle).replace(/^\d+월 /, "")} 발표 추적${s.track_own.turn48 != null ? ` · 48h 방향 ${s.track_own.turn48 > 0 ? "+" : ""}${s.track_own.turn48}°` : ""}${s.track_own.ens ? ` · 전향 2일 내 ${s.track_own.ens.p48 != null ? pct(s.track_own.ens.p48) : "–"}, 2~4일 ${s.track_own.ens.p96 != null ? pct(s.track_own.ens.p96) : "–"}(앙상블 ${s.track_own.ens.members})` : ""}</small>`, c => agencyCell(s.track_own, c, s[c])) : "")
+      + agency("한국 기상청", s.forecast_kr) + agency("일본 기상청", s.forecast) + agency("미국 JTWC", s.forecast_us)
       + "</tbody></table>";
   };
   const details = (s, c, label) => {
@@ -465,10 +468,22 @@ function renderNow(latest) {
         us.slice(1).forEach(c => L.circleMarker(c, { radius: 3.5, color: US_LINE, weight: 2, fillColor: "#fff", fillOpacity: 1, className: cls, interactive: false }).addTo(layer));
         liveBounds.push(...us);
       }
+      if (s.forecast_kr) {
+        const kr = [[last[1], last[2]], ...s.forecast_kr.points.map(p => [p[1], p[2]])];
+        L.polyline(kr, { color: KR_LINE, weight: 2.5, opacity: .9, dashArray: "2 5 8 5", className: cls, interactive: false }).addTo(layer);
+        kr.slice(1).forEach(c => L.circleMarker(c, { radius: 3.5, color: KR_LINE, weight: 2, fillColor: "#fff", fillOpacity: 1, className: cls, interactive: false }).addTo(layer));
+        liveBounds.push(...kr);
+      }
+      if (s.track_own) {
+        const own = [[last[1], last[2]], ...s.track_own.points.map(p => [p[1], p[2]])];
+        L.polyline(own, { color: OWN_LINE, weight: 2.5, opacity: .9, className: cls, interactive: false }).addTo(layer);
+        own.slice(1).forEach(c => L.circleMarker(c, { radius: 3.5, color: OWN_LINE, weight: 2, fillColor: "#fff", fillOpacity: 1, className: cls, interactive: false }).addTo(layer));
+        liveBounds.push(...own);
+      }
       const L1 = LV[idx];
       li.style.animationDelay = `${liveN * 90}ms`;
       li.innerHTML = `<div class="s-head"><b>${stormFull(s)}</b>${kt != null || s.grade != null ? `<span class="lv" style="--c:${L1.color};--ci:${L1.ink}">${lvName(kt, s.grade)}</span>` : ""}</div>`
-        + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt(${kn2ms(kt)}m/s)` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
+        + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt(${kn2ms(kt)}m/s)${s.wind_usa ? " 미국 환산" : ""}` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
         + compareTable(s) + details(s, "korea", "한국") + details(s, "japan", "일본")
         + `${s.env ? "" : '<div class="src weak">상공 자료 없음</div>'}`;
       list.appendChild(li); liveN++;
@@ -590,11 +605,14 @@ function renderCompare(stats, kma) {
   const me = lead("korea"), x = full.korea || m.korea, k = kmaF || {};
   const cell = (v, u = "") => has(v) ? v + u : "–";
   const fa = (a.model_false_alarm || {}).korea;
+  const ks = (kma && kma.korea_lead && kma.korea_lead.since_2015_same_as_model && kma.korea_lead.since_2015_same_as_model.scores) || {};
   $("metrics").innerHTML = tableHtml(["2015년~", "자체 모델", "기상청"], [
     ["도달 예측 기준", `확률 ${pct(WARN_P)} 이상`, "예보 경로 200km 진입"],
     ["첫 도달 예측(중앙값)", cell(me.median_warning_lead_h, "시간 전"), cell(k.median_warning_lead_h, "시간 전")],
-    ["빗나간 도달 예측", fa && has(fa.false_alarm_ratio) ? `${pct(fa.false_alarm_ratio)}(${fa.warned_storms}개 중)` : "–", "미집계"],
-    ["진입 시각 오차(평균)", cell(x.arrival_mae_h, "시간"), "미집계"],
+    ["빗나간 도달 예측", fa && has(fa.false_alarm_ratio) ? `${pct(fa.false_alarm_ratio)}(${fa.warned_storms}개 중)` : "–",
+      has(ks.false_alarm_ratio) ? `${pct(ks.false_alarm_ratio)}(${ks.warned_storms}개 중)` : "미집계"],
+    ["진입 시각 오차(평균)", cell(x.arrival_mae_h, "시간"),
+      has(ks.entry_mae_h) ? `${ks.entry_mae_h}시간(진입 예측한 발표 ${ks.entry_issues}건)` : "미집계"],
     ["평가한 태풍 수", cell(me.storms, "개"), cell(k.storms, "개")],
   ]);
 
@@ -609,7 +627,7 @@ function renderCompare(stats, kma) {
 }
 
 /* ---------- 지난 태풍 ---------- */
-function renderHistory(history, damage) {
+function renderHistory(history, damage, review = {}) {
   const list = $("histList"), scrub = $("scrub"), play = $("play");
   // 단계는 경로 중 최대풍속 기준(LV의 번호: 5단계 = 초강력 태풍)
   const items = history.map((s, i) => {
@@ -644,15 +662,24 @@ function renderHistory(history, damage) {
   const refName = () => cur.arrival ? "200km 진입" : "최단 거리";
   const hoursTo = t => (utc(t[0]) - utc(refTime(cur))) / 36e5;
 
+  // 복기: 실제 전향 시작과 누가 언제 처음 전향을 예측했는지(typhoon/review.py)
+  function turnLine(r) {
+    if (!r || !r.turn) return "";
+    const who = (name, v) => v === "none" ? null : `${name} ${v ? `${kst(v.t)}(${v.lead_h}시간 전)` : "예측 없음"}`;
+    const parts = [who("기상청", r.kma), who("자체 경로", r.own), who("자체 분류(48시간)", r.clf)].filter(Boolean);
+    return `<span class="h-why">전향 시작 ${kst(r.turn)} · 첫 전향 예측: ${parts.join(" · ")}</span>`;
+  }
+
   function summary() {
     const lead = firstLead(cur), first = lead != null;
     const it = items[history.indexOf(cur)];
     return `<b>${cur.season} ${stormFull(cur)}</b>`
-      + (it.lv != null ? ` · ${it.lv ? `${lvLabel(it.lv)}(${LV[it.lv].name}, ` : `${lvLabel(0)}(`}최대 ${it.peak}kt)` : "")
+      + (it.lv != null ? ` · ${it.lv ? `${lvLabel(it.lv)}(${LV[it.lv].name}, ` : `${lvLabel(0)}(`}최대 ${it.peak}kt${cur.wind_usa ? ", 미국 풍속 환산" : ""})` : "")
       + (it.dmg ? ` · 재산피해 ${won(it.dmg)}` : "")
       + (cur.arrival ? ` · 한국 200km 진입 ${kst(cur.arrival)} · ${first ? `한국 첫 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`
         : ` · 한국 도시까지 최단 ${cur.closest.km}km(${kst(cur.closest.t)}) · ${first ? `빗나간 한국 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`)
       + (cur.arrival_japan ? ` · 일본 200km 진입 ${kst(cur.arrival_japan)}` : "")
+      + turnLine(review[cur.sid])
       + (cur.peak ? `<span class="h-why">한국 최고 확률 ${pct(cur.peak.p)}(${kst(cur.peak.t)})${cur.peak.why?.length ? ` · 요인별 영향(없을 때 대비): ${whyText(cur.peak.why)}` : ""}</span>` : "");
   }
 
@@ -805,9 +832,9 @@ const nowReady = soft("data/latest.json").then(latest => {
   guard("now", latest && latest.storms && latest, l => { now = renderNow(l); });
   return now;
 });
-Promise.all(["history", "damage"].map(n => soft(`data/${n}.json`))).then(([history, damage]) => {
+Promise.all(["history", "damage", "review"].map(n => soft(`data/${n}.json`))).then(([history, damage, review]) => {
   const dmg = (damage && damage.storms) || {};
-  guard("history", history && history.length && history, h => renderHistory(h, dmg));
+  guard("history", history && history.length && history, h => renderHistory(h, dmg, review || {}));
   if (history && history.length) nowReady.then(now => { if (now && now.idle) now.showLast(history[0], dmg); });
 });
 Promise.all(["stats", "kma_lead"].map(n => soft(`data/${n}.json`))).then(([stats, kma]) => {

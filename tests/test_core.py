@@ -455,3 +455,204 @@ def test_track_future_and_turn():
     assert px[0] == pytest.approx(-2.0) and py[0] == 0
     turn = track.turn_table(d)
     assert turn.turn.iloc[0] == 1      # 서진 중 앞으로 북쪽으로 꺾임
+
+
+# ---------------------------------------------------------------- GFS 예보 중심 추적
+def test_gfs_track_follows_moving_low():
+    from typhoon import gfs_track as G
+    lat0, lon0 = 15.0, 140.0
+    P = np.empty((len(G.LEADS), len(G.LAT), len(G.LON)), np.float32)
+    for i, f in enumerate(G.LEADS):          # 6시간마다 북서로 0.6°·0.9° 이동하는 저기압
+        la, lo = lat0 + .1 * f, lon0 - .15 * f
+        d = haversine(G.LAT[:, None], G.LON[None, :], la, lo)
+        P[i] = 1010 - 40 * np.exp(-(d / 250) ** 2)
+    tr = G.track_cycle(P, lat0, lon0)
+    assert [t[0] for t in tr] == G.LEADS                  # 끝까지 따라감
+    f, la, lo, pm = tr[-1]
+    assert haversine(la, lo, lat0 + .1 * f, lon0 - .15 * f) < 60
+    flat = np.full_like(P, 1010)                          # 저기압이 없으면 바로 놓침
+    assert G.track_cycle(flat, lat0, lon0) == []
+
+
+def test_gfs_cycle_uses_only_published_runs():
+    from typhoon.gfs_track import cycle_for
+    assert cycle_for("2026-10-20T06") == pd.Timestamp("2026-10-20T00")
+    assert cycle_for("2026-10-20T00") == pd.Timestamp("2026-10-19T12")   # 00시 발표는 아직 공개 전
+    assert cycle_for("2026-10-20T18") == pd.Timestamp("2026-10-20T12")
+
+
+def test_log_keeps_own_track(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    latest = _latest()
+    latest["storms"][0]["track_own"] = {"issued": "2026-09-01T00", "cycle": "2026-08-31T12",
+                                        "points": [[24, 32.0, 129.0]], "turn48": 20}
+    assert forecast_log.append(latest) == 1
+    assert forecast_log._read()[0]["own"]["cycle"] == "2026-08-31T12"
+    latest["storms"][0]["track_own"] = dict(latest["storms"][0]["track_own"], cycle="2026-09-01T00")
+    assert forecast_log.append(latest) == 1                 # GFS 새 발표도 새 기록
+
+
+def test_kma_latest_without_key_is_empty(monkeypatch):
+    from typhoon.sources import kma
+    monkeypatch.setenv("KMA_APIHUB_KEY", "")
+    assert kma.latest() == {}                               # 키가 없으면 갱신을 멈추지 않고 건너뜀
+
+
+def test_log_keeps_kma_forecast(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    latest = _latest()
+    latest["storms"][0]["forecast_kr"] = {"issued": "2026-09-01T00", "seq": 3, "points": [[24, 32.0, 129.0, 30]]}
+    assert forecast_log.append(latest) == 1
+    latest["storms"][0]["forecast_kr"] = dict(latest["storms"][0]["forecast_kr"], issued="2026-09-01T06")
+    assert forecast_log.append(latest) == 1                 # 기상청 새 발표도 새 기록
+    assert [r["kr"]["issued"] for r in forecast_log._read()] == ["2026-09-01T00", "2026-09-01T06"]
+
+
+# ---------------------------------------------------------------- 복기(전향)
+def _storm(turn_at=None, n=24):
+    """6시간마다 서쪽으로 가다가 turn_at번째 점부터 북쪽으로 꺾이는 가짜 경로."""
+    lat, lon, rows = 15.0, 140.0, []
+    t = pd.date_range("2026-09-01", periods=n, freq="6h")
+    for i in range(n):
+        rows.append((t[i], lat, lon))
+        if turn_at is not None and i >= turn_at:
+            lat += .7
+        else:
+            lon -= .7
+    return pd.DataFrame(rows, columns=["time", "LAT", "LON"])
+
+
+def test_review_actual_turn_and_first_call():
+    from typhoon.review import actual_turn, first_call
+    assert actual_turn(_storm(None)) is None
+    g = _storm(12)
+    turn = actual_turn(g)
+    assert turn is not None and turn <= g.time[12]
+    hh = np.arange(0, 121, 12)
+    straight = (g.time[4], hh, np.full(len(hh), 15.0), 140 - 4 * .7 - hh / 6 * .7)          # 계속 서진 예보
+    north = (g.time[6], hh, 15.0 + np.where(hh > 24, (hh - 24) / 6 * .7, 0),                 # 24시간 뒤 북상 예보
+             np.where(hh > 24, 140 - 10 * .7, 140 - 6 * .7 - hh / 6 * .7))
+    assert first_call([straight], g, turn) is None
+    assert first_call([straight, north], g, turn) == g.time[6]
+
+
+def test_score_sources_same_rules(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    t = pd.date_range("2026-09-01T00", periods=40, freq="6h")
+    df = pd.DataFrame({"SID": "2026244N28128", "time": t, "LAT": np.linspace(30, 45, len(t)), "LON": 128.5})
+    for c in ("korea", "japan"):
+        df[f"in_{c}"] = min_dist(df.LAT.values, df.LON.values, c) <= 200
+    latest = _latest()
+    latest["storms"][0]["forecast"]["points"] = [[24, 31.5, 128.5, 150, 960, 40], [72, 36.0, 128.5, 250, 970, 30]]
+    latest["storms"][0]["forecast_kr"] = {"issued": "2026-09-01T00", "points": [[24, 31.5, 128.5, 30], [72, 36.0, 128.5, 25]],
+                                          "approach": {"korea": {"center": "2026-09-01T20"}, "japan": {"center": None}}}
+    forecast_log.append(latest)
+    s = forecast_log.score_sources(forecast_log._read(), df, df.time.max())
+    assert s["kr"]["issues"] == 1 and s["kr"]["korea"]["hit"] == 1
+    assert s["kr"]["track_error_km"]["24h"]["n"] == 1 and s["kr"]["track_error_km"]["24h"]["mean"] < 10
+    assert s["jma"]["korea"]["hit"] == 1 and s["us"]["issues"] == 0
+
+
+def test_display_wind_only_when_storm_has_no_jma_wind():
+    from typhoon.export import display_wind
+    only_usa = pd.DataFrame({"wind": [np.nan, np.nan, np.nan], "USA_WIND": [60.0, 100.0, np.nan]})
+    w, used = display_wind(only_usa)
+    assert used and w.iloc[1] == pytest.approx(88) and np.isnan(w.iloc[2])
+    mixed = pd.DataFrame({"wind": [50.0, np.nan, np.nan], "USA_WIND": [60.0, 100.0, np.nan]})
+    w, used = display_wind(mixed)                           # 일본 값이 있으면 최대 풍속을 미국 값으로 올리지 않는다
+    assert used is False and w.iloc[0] == 50 and np.isnan(w.iloc[1])
+    assert display_wind(mixed.assign(USA_WIND=np.nan, wind=np.nan))[1] is False
+
+
+def test_score_sources_counts_gfs_cycle_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(forecast_log, "LOG", tmp_path / "log.jsonl")
+    t = pd.date_range("2026-09-01T00", periods=40, freq="6h")
+    df = pd.DataFrame({"SID": "2026244N28128", "time": t, "LAT": np.linspace(30, 45, len(t)), "LON": 128.5})
+    for c in ("korea", "japan"):
+        df[f"in_{c}"] = min_dist(df.LAT.values, df.LON.values, c) <= 200
+    own = {"cycle": "2026-08-31T12", "points": [[24, 31.5, 128.5]], "approach": {}}
+    rows = [{"sid": "2026244N28128", "name": "X", "position": {"time": i, "lat": 30, "lon": 128.5}, "own": dict(own, issued=i)}
+            for i in ("2026-09-01T00", "2026-09-01T06")]
+    assert forecast_log.score_sources(rows, df, df.time.max())["own"]["issues"] == 1
+
+
+def test_kma_latest_skips_issue_without_forecast(monkeypatch):
+    from typhoon.sources import kma
+    monkeypatch.setenv("KMA_APIHUB_KEY", "x")
+    lst = pd.DataFrame({"NOW": ["1"], "SEQ": ["7"], "TYP_EN": ["INFA"]})
+    d = pd.DataFrame({"FT": [0, 1, 0], "SEQ": [3, 3, 4], "TMD": [0, 24, 0], "LAT": [20.0, 22.0, 21.0], "LON": [130.0, 129.0, 129.5],
+                      "WS": [30, 35, 30], "TYP_TM": ["202611010000", "202611010000", "202611010600"]})
+    frames = iter([lst, d])
+    monkeypatch.setattr(kma, "parse_hub_text", lambda *a: next(frames))
+    monkeypatch.setattr(kma.requests, "get", lambda *a, **k: type("R", (), {"text": "", "raise_for_status": lambda self: None})())
+    w = kma.latest()["INFA"]
+    assert w["seq"] == 3 and w["points"] == [[24, 22.0, 129.0, 35]]
+
+
+def test_gfs_cycle_recent_gap_not_cached(tmp_path, monkeypatch):
+    from typhoon import gfs_track
+    monkeypatch.setattr(gfs_track, "DIR", tmp_path)
+    field = np.zeros((len(gfs_track.LAT), len(gfs_track.LON)))
+    monkeypatch.setattr(gfs_track, "_fetch", lambda s, c, f: None if f == 12 else field)
+    recent = pd.Timestamp.now("UTC").tz_localize(None).floor("12h")
+    assert gfs_track.fetch_cycle(None, recent) == "missing" and not gfs_track._path(recent).exists()
+    assert gfs_track.fetch_cycle(None, pd.Timestamp("2024-01-01")) == "ok"      # 오래된 발표의 빠진 파일은 다시 안 올라온다
+
+
+def test_gefs_failed_member_not_cached_and_holes_refetched(tmp_path, monkeypatch):
+    from typhoon import gefs
+    monkeypatch.setattr(gefs, "DIR", tmp_path)
+    monkeypatch.setattr(gefs.time, "sleep", lambda s: None)
+    c, field = pd.Timestamp("2026-10-20"), np.zeros((len(gefs.LAT), len(gefs.LON)))
+
+    def flaky(s, c, m, f):
+        if f == 12:
+            raise OSError("끊김")
+        return field
+    monkeypatch.setattr(gefs, "_fetch", flaky)
+    assert gefs.fetch_member(None, c, "gec00") is False and not gefs._path(c, "gec00").exists()
+    monkeypatch.setattr(gefs, "_fetch", lambda *a: field)
+    assert gefs.fetch_member(None, c, "gec00") is True and gefs._complete(gefs._path(c, "gec00"))
+    holes = np.full((len(gefs.LEADS), 2, 2), 1.0)           # 이전 방식으로 저장된, 구멍 난 캐시는 다시 받는다
+    holes[3] = np.nan
+    np.savez_compressed(gefs._path(c, "gec00"), p=holes)
+    assert not gefs._complete(gefs._path(c, "gec00"))
+    gefs._path(c, "gec00").write_bytes(b"broken")
+    assert not gefs._complete(gefs._path(c, "gec00"))
+
+
+def _gefs_case(monkeypatch, n, dlat, dlon):
+    """북쪽으로 가던 태풍과, 시점 뒤 (dlat, dlon)도/48시간으로 움직이는 멤버 n개."""
+    from typhoon import gefs
+    g = pd.DataFrame({"time": pd.date_range("2026-10-19T12", periods=7, freq="6h"), "LAT": np.arange(7) * .5 + 15.0, "LON": 140.0})
+    leads = np.arange(0, 133, 6.0)
+    track = (leads, 15.0 + leads / 48 * dlat, 140.0 + leads / 48 * dlon)
+    monkeypatch.setattr(gefs, "member_tracks", lambda *a: {f"m{i}": track for i in range(n)})
+    return gefs, g, g.time.iloc[-1]
+
+
+def test_gefs_turn_requires_movement(monkeypatch):
+    gefs, g, t = _gefs_case(monkeypatch, 20, 0, 4.0)        # 동쪽으로 충분히 움직임: 전향
+    assert gefs.turn_probability(g, t)[0] == 1
+    gefs, g, t = _gefs_case(monkeypatch, 20, 0, .5)         # 방향은 꺾였지만 48시간에 약 50km: 흔들림
+    assert gefs.turn_probability(g, t)[0] == 0
+
+
+def test_gefs_needs_enough_members(monkeypatch):
+    gefs, g, t = _gefs_case(monkeypatch, gefs_min := 9, 0, 4.0)
+    assert gefs_min < gefs.MIN_MEMBERS and gefs.turn_probability(g, t) is None and gefs.late_turn(g, t) is None
+
+
+def test_review_false_call_and_summary():
+    from typhoon.review import false_call, summarize
+    g = _storm(None)
+    hh = np.arange(0, 121, 12)
+    straight = (g.time[4], hh, np.full(len(hh), 15.0), 140 - 4 * .7 - hh / 6 * .7)
+    north = (g.time[4], hh, 15.0 + hh / 6 * .7, np.full(len(hh), 137.2))
+    assert not false_call([straight], g) and false_call([straight, north], g)
+    lines = summarize({"a": {"turn": "t", "kma": {"lead_h": 10}, "own": "none", "clf": None},
+                       "b": {"turn": "t", "kma": None, "own": {"lead_h": 30}, "clf": {"lead_h": 3}},
+                       "c": {"turn": None, "false": {"kma": True, "own": None, "clf": False}}})
+    assert "kma: 자료 있는 태풍 2개 중 미리 예측 1개" in lines[0]
+    assert lines[3] == "kma: 전향 없던 태풍 1개 중 전향 예측 1개" and lines[4].startswith("own: 전향 없던 태풍 0개")
+    assert "같은 표본(자체 경로 자료가 있는 1개) kma: 자료 있는 태풍 1개 중 미리 예측 0개" in lines[6]

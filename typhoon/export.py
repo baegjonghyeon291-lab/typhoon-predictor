@@ -30,9 +30,22 @@ def predict_rows(d, models):
     return d
 
 
+USA_TO_10MIN = 0.88      # 미국 1분 평균 풍속 → 10분 평균 근사(WMO 권고 환산)
+
+
+def display_wind(g):
+    """표시용 풍속(kt): 태풍 전체에 일본 기상청(10분 평균) 풍속이 하나도 없을 때만 미국 1분 평균 × 0.88.
+    일본 값이 있는 태풍에 점 단위로 섞으면 일본 자료 밖 구간 때문에 최대 풍속과 단계가 올라간다.
+    모델 입력(wind)은 바꾸지 않는다. → (풍속 Series, 미국 환산을 썼는지)."""
+    usa = g["USA_WIND"] * USA_TO_10MIN if "USA_WIND" in g else pd.Series(np.nan, index=g.index)
+    used = bool(g.wind.isna().all() and usa.notna().any())
+    return (usa if used else g.wind), used
+
+
 def track(g, extra=()):
-    return [[t.strftime("%Y-%m-%dT%H"), num(la), num(lo), num(w, 0), num(p, 0), *[num(r[e], 3) for e in extra]]
-            for t, la, lo, w, p, (_, r) in zip(g.time, g.LAT, g.LON, g.wind, g.pres, g.iterrows())]
+    w, _ = display_wind(g)
+    return [[t.strftime("%Y-%m-%dT%H"), num(la), num(lo), num(ww, 0), num(p, 0), *[num(r[e], 3) for e in extra]]
+            for t, la, lo, ww, p, (_, r) in zip(g.time, g.LAT, g.LON, w, g.pres, g.iterrows())]
 
 
 def approach(path):
@@ -95,6 +108,29 @@ def us_forecast(w):
             "approach": approach(path)}
 
 
+def kr_forecast(w):
+    """기상청 예보(sources.kma.latest)를 사이트 형식으로. 영향권 판정은 일본·미국 예보와 같은 계산."""
+    path = [(w["time"], w["lat"], w["lon"], 0)]
+    path += [(w["time"] + pd.Timedelta(hours=h), la, lo, 0) for h, la, lo, _ in w["points"]]
+    return {"issued": w["issued"].strftime("%Y-%m-%dT%H"), "seq": w["seq"], "points": w["points"], "approach": approach(path)}
+
+
+def safe_own_track(g):
+    """GFS 추적 자체 경로(gfs_track.own_track)에 영향권 판정을 붙인다. 실패해도 갱신은 이어 간다."""
+    try:
+        from .gfs_track import own_track
+        o = own_track(g)
+    except Exception as e:  # noqa: BLE001
+        print(f"[gfs_track] 자체 경로 실패: {type(e).__name__}: {e}")
+        return None
+    if not o:
+        return None
+    t0 = pd.Timestamp(o["issued"])
+    last = g.iloc[-1]
+    o["approach"] = approach([(t0, last.LAT, last.LON, 0)] + [(t0 + pd.Timedelta(hours=h), la, lo, 0) for h, la, lo in o["points"]])
+    return o
+
+
 def export_recent(df, models, live=False):
     last_time = df.time.max()
     sids = df[df.time >= last_time - pd.Timedelta(days=RECENT_DAYS)].SID.unique()
@@ -104,6 +140,7 @@ def export_recent(df, models, live=False):
         last = g.iloc[-1]
         s = {"sid": sid, "name": str(g.NAME.iloc[0]), "grade": num(last.TOKYO_GRADE, 0), "start": g.time.min().strftime("%Y-%m-%dT%H"),
              "end": last.time.strftime("%Y-%m-%dT%H"), "track": track(g, ["p_korea", "p_japan"]),
+             "wind_usa": display_wind(g)[1] or None,
              "env": src if isinstance(src := last.get("env_src"), str) else None}  # 마지막 예측에 쓴 상공 자료: gfs·ncep, 없으면 경로만
         for c in models:
             hit = g[g[f"in_{c}"]]
@@ -124,6 +161,13 @@ def export_recent(df, models, live=False):
     from .sources import jtwc
     us = jtwc.latest()         # 실시간 자료가 끊겨도 활동 중인 태풍을 확인할 수 있게 항상 받는다
     print(f"[jtwc] 활동 중 예보 {len(us)}개")
+    from .sources import kma
+    try:
+        kr = kma.latest() if live else {}
+    except Exception as ex:  # noqa: BLE001
+        print(f"[kma] 실패: {type(ex).__name__}")
+        kr = {}
+    print(f"[kma] 활동 중 예보 {len(kr)}개")
     if live:
         fc = latest_forecasts()
         for s in storms:
@@ -133,6 +177,20 @@ def export_recent(df, models, live=False):
                 s["forecast"] = fc[s["name"].upper()]
             if s["name"].upper() in us:
                 s["forecast_us"] = us_forecast(us[s["name"].upper()])
+            if s["name"].upper() in kr:
+                s["forecast_kr"] = kr_forecast(kr[s["name"].upper()])
+            gs = df[df.SID == s["sid"]].sort_values("time")
+            own = safe_own_track(gs)
+            if own:
+                s["track_own"] = own
+                try:                                    # GEFS 앙상블 전향 확률(2~4일 뒤까지)
+                    from .gefs import live_turn
+                    turn = live_turn(gs)
+                    if turn:
+                        own["ens"] = turn
+                except Exception as ex:  # noqa: BLE001
+                    print(f"[gefs] 전향 확률 실패: {type(ex).__name__}: {ex}")
+        print(f"[gfs_track] 자체 경로 {sum('track_own' in s for s in storms)}개")
     return {"generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
             "data_until": last_time.strftime("%Y-%m-%dT%H"), "live": live, "us_active": sorted(us), "storms": storms}
 
@@ -172,7 +230,7 @@ def export_history(df, models):
                     "arrival": None if pd.isna(arrival) else arrival.strftime("%Y-%m-%dT%H"),
                     "arrival_japan": None if pd.isna(japan) else japan.strftime("%Y-%m-%dT%H"),
                     "closest": {"t": close.time.strftime("%Y-%m-%dT%H"), "km": num(close.dist_korea, 0)}, "peak": peak,
-                    "track": track(g, ["p_korea", "p_japan"])})
+                    "wind_usa": display_wind(g)[1] or None, "track": track(g, ["p_korea", "p_japan"])})
     out.sort(key=lambda s: s["arrival"] or s["closest"]["t"], reverse=True)
     return out
 
