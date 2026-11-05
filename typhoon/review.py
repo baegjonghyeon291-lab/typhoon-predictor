@@ -6,7 +6,7 @@
 
   - 기상청: API허브 예보 이력(2001~, data/kma/typhoon, 키 필요). 발표 시각에 공개 지연 KMA_LAG_H를 더한다(가정값)
   - 자체 경로: GFS 예보 중심 추적(gfs_track, 2021-06~, data/env/gfs_fc). 발표 6시간 뒤를 그 예측의 시점으로 본다
-  - 자체 분류: 경로 모델 실험의 48시간 전향 분류(track.py, 1951~2014 학습)가 50% 이상. 앞의 둘(4일)보다 보는 기간이 짧다
+  - 자체 분류: 48시간 전향 모델(turn.py, ~2014 학습)이 50% 이상. 지금부터 48시간을 보는 모델이라 전향 시작 48시간 전까지만 센다
 전향이 없던 태풍에서 전향을 예측했는지(false)도 같이 남겨, 자주 꺾는 예측이 앞선 시간에서만 유리해 보이지 않게 한다.
 일본 기상청·미국 JTWC의 과거 예보는 받을 수 없어 예보 기록(forecast_log)이 쌓인 태풍부터 넣는다.
 
@@ -23,6 +23,7 @@ from .features import bearing
 OUT = ROOT / "docs" / "data" / "review.json"
 TURN_DEG, SEG_H, MIN_MOVE_KM = 45, 48, 200
 WINDOW_H = 120
+CLF_WINDOW_H = 48
 KMA_LAG_H = 3            # 기상청 분석 시각 → 공개까지의 지연(가정값). 자료에 공개 시각이 없다. GFS는 AVAIL_H(6시간)
 
 
@@ -128,18 +129,21 @@ def gfs_issues():
 
 
 def classifier_calls(df):
-    """경로 모델 실험의 48시간 전향 분류 확률(1951~2014 학습) → {SID: [(시점, 확률)]}."""
-    from sklearn.ensemble import HistGradientBoostingClassifier
-    from .features import ENV_FEATURES, FEATURES
-    from .track import turn_table
-    from .train import CLF_PARAMS, SPLIT_YEAR
-    feats = [*FEATURES, *[c for c in ENV_FEATURES if c in df]]
-    tr = turn_table(df[df.SEASON < SPLIT_YEAR])
-    clf = HistGradientBoostingClassifier(**CLF_PARAMS).fit(tr[feats], tr.turn)
-    d = df[df.SEASON >= SPLIT_YEAR]
-    p = clf.predict_proba(d[feats])[:, 1]
-    return {sid: list(zip(g.time, pp)) for (sid, g), pp in
-            ((x, p[d.SID.to_numpy() == x[0]]) for x in d.groupby("SID"))}
+    """학습 기간 밖(2015~) 48시간 전향 모델 확률 → {SID: [(시점, 확률)]}. 확률이 없는 시점은 뺀다."""
+    from .train import SPLIT_YEAR
+    from .turn import predict_turn
+    d = df[df.SEASON >= SPLIT_YEAR].assign(p_turn=lambda x: predict_turn(x)).dropna(subset=["p_turn"])
+    return {sid: list(zip(g.time, g.p_turn)) for sid, g in d.groupby("SID")}
+
+
+def clf_result(calls, turn):
+    """자체 분류의 복기 값: 전향이 있으면 첫 예측 시점(없으면 None), 전향이 없으면 헛예측 여부."""
+    from .turn import CALL_P
+    hits = [t for t, p in calls if p >= CALL_P]
+    if turn is None:
+        return bool(hits)
+    hits = [t for t in hits if turn - pd.Timedelta(hours=CLF_WINDOW_H) <= t <= turn]
+    return min(hits) if hits else None
 
 
 def build():
@@ -158,12 +162,11 @@ def build():
                 return None if t0 is None else {"t": t0.strftime("%Y-%m-%dT%H"), "lead_h": int((turn - t0) / pd.Timedelta(hours=1))}
             r["kma"] = lead(first_call(kma.get(sid, []), g, turn)) if sid in kma else "none"
             r["own"] = lead(first_call(gfs.get(sid, []), g, turn)) if sid in gfs else "none"
-            calls = [t for t, p in clf.get(sid, []) if p >= .5 and turn - pd.Timedelta(hours=WINDOW_H) <= t <= turn]
-            r["clf"] = lead(min(calls)) if calls else None
+            r["clf"] = lead(clf_result(clf.get(sid, []), turn))
         else:
             r["false"] = {"kma": false_call(kma[sid], g) if sid in kma else None,
                           "own": false_call(gfs[sid], g) if sid in gfs else None,
-                          "clf": any(p >= .5 for _, p in clf.get(sid, []))}
+                          "clf": clf_result(clf.get(sid, []), None)}
         out[sid] = r
     OUT.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"[review] 태풍 {len(out)}개, 실제 전향 {sum(bool(r['turn']) for r in out.values())}개 → {OUT}")

@@ -4,7 +4,7 @@
 
 사이트: https://baegjonghyeon291-lab.github.io/typhoon-predictor/
 
-직접 학습한 머신러닝 자체 모델로 태풍을 예측하고, 이를 기준으로 한·미·일 기관 예보와 비교해 왜 다른지 결과로 배우는 프로젝트. 1951년 이후 서태평양 태풍 경로 전체를 학습해 지금 태풍이 한국(또는 일본)에 언제 올지 예측한다.
+직접 학습한 머신러닝 자체 모델로 태풍의 진로 전향을 중심으로 예측하고, 이를 기준으로 한·미·일 기관 예보와 비교해 왜 다른지 결과로 배우는 프로젝트. 1951년 이후 서태평양 태풍 경로 전체를 학습해 지금 태풍이 한국(또는 일본)에 언제 올지 예측한다.
 
 ## 데이터
 
@@ -92,6 +92,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m typhoon.predict --update   # 최신 데이터 받아 가장 최근 태풍 예측
 .venv/bin/python -m typhoon.predict --sid 2026288N10161
 .venv/bin/python -m typhoon.export --update     # 사이트 데이터 갱신 → docs/data/
+.venv/bin/python -m typhoon.turn       # 48시간 전향 모델 학습 → models/turn*.joblib, reports/turn_metrics.json
 .venv/bin/python -m typhoon.track      # 경로·전향 모델 실험 → reports/track_experiment.txt
 ```
 

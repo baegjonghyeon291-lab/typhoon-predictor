@@ -9,8 +9,10 @@ import pandas as pd
 from .data import load, download, haversine, ROOT, CITIES, CITY_NAMES, RADIUS_KM
 from . import realtime
 from .explain import safe_contributions
-from .features import add_features, add_env, predict, predict_range, ENV_FEATURES, FEATURES
+from .features import add_features, add_env, bearing, predict, predict_range, ENV_FEATURES, FEATURES
+from .track import MIN_MOVE_KM
 from .train import SPLIT_YEAR
+from .turn import predict_turn
 
 OUT = ROOT / "docs" / "data"
 RECENT_DAYS = 21
@@ -27,6 +29,7 @@ def predict_rows(d, models):
     for c in models:
         d[f"p_{c}"], d[f"h_{c}"] = predict(c, d)
         d[f"lo_{c}"], d[f"hi_{c}"] = predict_range(c, d)
+    d["p_turn"] = predict_turn(d)
     return d
 
 
@@ -115,6 +118,30 @@ def kr_forecast(w):
     return {"issued": w["issued"].strftime("%Y-%m-%dT%H"), "seq": w["seq"], "points": w["points"], "approach": approach(path)}
 
 
+def direction(points, base, g):
+    """예보 경로의 방향 변화(지난 24시간 진행 방향 기준, 도. +: 오른쪽). 전향 모델·앙상블과 같은 정의로
+    turn48: 지금 → 48시간 뒤, turn96: 48 → 96시간 뒤. 예보가 짧거나 200km 미만 움직이면 None.
+    points: [[발표 base 기준 시간, 위도, 경도, ...]]."""
+    last = g.iloc[-1]
+    prev = g[g.time == last.time - pd.Timedelta(hours=24)]
+    points = [p for p in points if p[1] is not None and p[2] is not None]
+    if prev.empty or not points:
+        return {}
+    now = bearing(prev.LAT.iloc[0], prev.LON.iloc[0], last.LAT, last.LON)
+    off = (last.time - pd.Timestamp(base)) / pd.Timedelta(hours=1)
+    hh = [p[0] for p in points]
+    at = lambda h: (float(np.interp(h + off, hh, [p[1] for p in points])), float(np.interp(h + off, hh, [p[2] for p in points])))  # noqa: E731
+
+    def change(a, b):
+        return round(float((bearing(*a, *b) - now + 180) % 360 - 180)) if haversine(*a, *b) >= MIN_MOVE_KM else None
+    out = {}
+    if hh[-1] >= 48 + off:
+        out["turn48"] = change((float(last.LAT), float(last.LON)), at(48))
+    if hh[-1] >= 96 + off:
+        out["turn96"] = change(at(48), at(96))
+    return out
+
+
 def safe_own_track(g):
     """GFS 추적 자체 경로(gfs_track.own_track)에 영향권 판정을 붙인다. 실패해도 갱신은 이어 간다."""
     try:
@@ -128,6 +155,7 @@ def safe_own_track(g):
     t0 = pd.Timestamp(o["issued"])
     last = g.iloc[-1]
     o["approach"] = approach([(t0, last.LAT, last.LON, 0)] + [(t0 + pd.Timedelta(hours=h), la, lo, 0) for h, la, lo in o["points"]])
+    o.update(direction(o["points"], t0, g))
     return o
 
 
@@ -139,7 +167,7 @@ def export_recent(df, models, live=False):
         g = predict_rows(df[df.SID == sid], models)
         last = g.iloc[-1]
         s = {"sid": sid, "name": str(g.NAME.iloc[0]), "grade": num(last.TOKYO_GRADE, 0), "start": g.time.min().strftime("%Y-%m-%dT%H"),
-             "end": last.time.strftime("%Y-%m-%dT%H"), "track": track(g, ["p_korea", "p_japan"]),
+             "end": last.time.strftime("%Y-%m-%dT%H"), "track": track(g, ["p_korea", "p_japan", "p_turn"]),
              "wind_usa": display_wind(g)[1] or None,
              "env": src if isinstance(src := last.get("env_src"), str) else None}  # 마지막 예측에 쓴 상공 자료: gfs·ncep, 없으면 경로만
         for c in models:
@@ -154,6 +182,10 @@ def export_recent(df, models, live=False):
                     s[c]["range"] = [num(max(min(last[f"lo_{c}"], h), 0), 0), num(max(last[f"hi_{c}"], h), 0)]
                 if live and last.time == last_time:       # 활동 중인 태풍만 근거 계산(기록에도 함께 남는다)
                     s[c]["why"] = safe_contributions(c, g.iloc[[-1]])[0]
+        if not pd.isna(last.p_turn):
+            s["turn"] = {"p": num(last.p_turn, 3)}
+            if live and last.time == last_time:           # 지금 전향 확률을 올리거나 내린 요인
+                s["turn"]["why"] = safe_contributions("turn", g.iloc[[-1]])[0]
         if live and last.time == last_time:
             s["inputs"] = {k: num(last[k], 3) for k in [*FEATURES, *ENV_FEATURES] if k in g}
         storms.append(s)
@@ -173,13 +205,16 @@ def export_recent(df, models, live=False):
         for s in storms:
             if s["end"] != last_time.strftime("%Y-%m-%dT%H"):
                 continue
+            gs = df[df.SID == s["sid"]].sort_values("time")
             if s["name"].upper() in fc:
                 s["forecast"] = fc[s["name"].upper()]
+                s["forecast"].update(direction(s["forecast"]["points"], s["forecast"]["issued"], gs))
             if s["name"].upper() in us:
-                s["forecast_us"] = us_forecast(us[s["name"].upper()])
+                w = us[s["name"].upper()]
+                s["forecast_us"] = {**us_forecast(w), **direction(w["points"], w["time"], gs)}
             if s["name"].upper() in kr:
-                s["forecast_kr"] = kr_forecast(kr[s["name"].upper()])
-            gs = df[df.SID == s["sid"]].sort_values("time")
+                w = kr[s["name"].upper()]
+                s["forecast_kr"] = {**kr_forecast(w), **direction(w["points"], w["time"], gs)}
             own = safe_own_track(gs)
             if own:
                 s["track_own"] = own
@@ -230,7 +265,7 @@ def export_history(df, models):
                     "arrival": None if pd.isna(arrival) else arrival.strftime("%Y-%m-%dT%H"),
                     "arrival_japan": None if pd.isna(japan) else japan.strftime("%Y-%m-%dT%H"),
                     "closest": {"t": close.time.strftime("%Y-%m-%dT%H"), "km": num(close.dist_korea, 0)}, "peak": peak,
-                    "wind_usa": display_wind(g)[1] or None, "track": track(g, ["p_korea", "p_japan"])})
+                    "wind_usa": display_wind(g)[1] or None, "track": track(g, ["p_korea", "p_japan", "p_turn"])})
     out.sort(key=lambda s: s["arrival"] or s["closest"]["t"], reverse=True)
     return out
 

@@ -50,6 +50,7 @@ def append(latest):
                     "position": {"time": last[0], "lat": last[1], "lon": last[2]},
                     "points": fc.get("points"), "approach": fc.get("approach"), "env": s.get("env"),
                     "model": {c: s[c] for c in COUNTRIES if c in s},   # 확률·도착 시간과 근거(why)
+                    "turn": s.get("turn"),                             # 자체 전향 모델 확률과 근거
                     "inputs": s.get("inputs"), "us": us, "own": own, "kr": kr})   # own: GFS 추적 자체 경로(gfs_track.own_track)
         seen.add(key)
     if new:

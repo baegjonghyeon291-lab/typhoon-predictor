@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>태풍 예측</title>
-<meta name="description" content="서태평양 태풍의 한국·일본 도달 확률과 시기를 머신러닝으로 예측하고 기관 예보와 비교합니다. 공식 예보가 아닙니다.">
+<meta name="description" content="서태평양 태풍의 진로 전향을 머신러닝으로 예측하고 한·미·일 예보와 비교합니다. 공식 예보가 아닙니다.">
 <script>document.documentElement.classList.add("js")</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css?v=20261104-4">
+<link rel="stylesheet" href="style.css?v=20261105-1">
 </head>
 <body>
 <header class="top">
@@ -16,7 +16,7 @@
   <nav aria-label="섹션">
     <a href="#now">현재 태풍</a>
     <a href="#history">지난 태풍</a>
-    <a href="#compare">기상청 비교</a>
+    <a href="#compare">전향 비교</a>
   </nav>
 </header>
 
@@ -58,7 +58,7 @@
         <div class="hist-grid">
           <div id="histMap" class="map" role="region" aria-label="지난 태풍 경로 지도"></div>
           <div class="chart-box">
-            <h3>5일 내 도달 확률</h3>
+            <div class="chart-head"><h3 id="histChartTitle">48시간 내 전향 확률</h3><div id="histMode" class="seg" role="group" aria-label="그래프"></div></div>
             <div class="chart-wrap"><canvas id="histChart"></canvas></div>
             <details class="rel-table"><summary>표로 보기</summary><div id="histTable"></div></details>
           </div>
@@ -70,18 +70,34 @@
 
 <section id="compare">
   <div class="wrap">
-    <div class="sec-head"><h2>자체 모델 vs 기상청</h2></div>
+    <div class="sec-head"><h2>첫 전향 예측 비교</h2></div>
     <div class="article cmp-b">
       <div class="chart-box tall">
-        <h3>한국 200km 진입 전 도달 예측 비율</h3>
-        <div class="chart-wrap"><canvas id="leadChart"></canvas></div>
-        <details class="rel-table"><summary>표로 보기</summary><div id="leadTable"></div></details>
+        <h3 id="turnChartTitle">전향 시작 전 미리 예측한 비율</h3>
+        <div class="chart-wrap"><canvas id="turnChart"></canvas></div>
+        <details class="rel-table"><summary>표로 보기</summary><div id="turnChartTable"></div></details>
       </div>
-      <div class="side-col">
-        <div id="metrics"></div>
-        <div id="factors"></div>
-      </div>
+      <div class="side-col"><div id="turnTable"></div></div>
     </div>
+  </div>
+</section>
+
+<section id="reach">
+  <div class="wrap">
+    <details class="reach-box">
+      <summary>한국 도달 예측 비교</summary>
+      <div class="article cmp-b">
+        <div class="chart-box tall">
+          <h3>한국 200km 진입 전 도달 예측 비율</h3>
+          <div class="chart-wrap"><canvas id="leadChart"></canvas></div>
+          <details class="rel-table"><summary>표로 보기</summary><div id="leadTable"></div></details>
+        </div>
+        <div class="side-col">
+          <div id="metrics"></div>
+          <div id="factors"></div>
+        </div>
+      </div>
+    </details>
   </div>
 </section>
 </main>
@@ -92,6 +108,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=20261104-5"></script>
+<script src="app.js?v=20261105-1"></script>
 </body>
 </html>

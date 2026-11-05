@@ -643,6 +643,35 @@ def test_gefs_needs_enough_members(monkeypatch):
     assert gefs_min < gefs.MIN_MEMBERS and gefs.turn_probability(g, t) is None and gefs.late_turn(g, t) is None
 
 
+def test_direction_matches_turn_definition():
+    t = pd.Timestamp("2026-10-20T00")
+    g = pd.DataFrame({"time": [t - pd.Timedelta(hours=24), t], "LAT": [20.0, 21.0], "LON": [130.0, 130.0]})     # 북진 중
+    d = export.direction([[24, 21.0, 132.0], [48, 21.0, 134.0], [96, 25.0, 134.0]], t, g)     # 동쪽으로 꺾였다가 다시 북쪽
+    assert d["turn48"] > 45 and abs(d["turn96"]) < 45
+    assert "turn96" not in export.direction([[48, 21.0, 134.0]], t, g)                       # 예보가 짧다
+    assert export.direction([[48, 21.1, 130.0]], t, g)["turn48"] is None                     # 200km 미만
+    assert export.direction([[48, 21.0, 134.0]], t, g.iloc[[1]]) == {}                       # 지난 방향 없음
+    late = export.direction([[48, 21.0, 134.0], [54, 21.0, 140.0]], t - pd.Timedelta(hours=6), g)   # 6시간 전 발표는 54시간 값
+    assert "turn48" in late and "turn96" not in late
+
+
+def test_predict_turn_needs_past_heading():
+    from typhoon.turn import predict_turn
+    d = pd.DataFrame([{f: 1.0 for f in FEATURES}, {f: 1.0 for f in FEATURES}])
+    d.loc[1, "dlat_24"] = np.nan
+    p = predict_turn(d)
+    assert 0 <= p[0] <= 1 and np.isnan(p[1])
+
+
+def test_review_clf_counts_only_its_48h_window():
+    from typhoon.review import clf_result
+    turn = pd.Timestamp("2026-10-20T00")
+    at = lambda h, p: (turn - pd.Timedelta(hours=h), p)    # noqa: E731
+    assert clf_result([at(72, .9), at(12, .6), at(6, .9)], turn) == turn - pd.Timedelta(hours=12)
+    assert clf_result([at(72, .9), at(6, .4)], turn) is None
+    assert clf_result([at(72, .9)], None) is True and clf_result([at(72, .4)], None) is False
+
+
 def test_review_false_call_and_summary():
     from typhoon.review import false_call, summarize
     g = _storm(None)

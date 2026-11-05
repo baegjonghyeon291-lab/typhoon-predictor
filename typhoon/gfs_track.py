@@ -210,8 +210,7 @@ def own_track(g, sess=None):
     """활동 중인 태풍(g: 한 태풍의 시점 표, 시간순)의 자체 경로.
     마지막 관측 시각 t에 공개된 발표를 받아 발표 시각 실제 위치부터 중심을 추적하고,
     GFS 이동량(지금 → h시간 뒤)을 마지막 관측 위치에 더한다(실험의 'GFS 그대로', 섞는 비율 5~20%는 생략).
-    → {"issued", "cycle", "points": [[h, lat, lon]], "turn48"} 또는 None(발표 없음·추적 실패)."""
-    from .features import bearing
+    → {"issued", "cycle", "points": [[h, lat, lon]]} 또는 None(발표 없음·추적 실패)."""
     last = g.iloc[-1]
     t, c = last.time, cycle_for(last.time)
     at_c = g[g.time == c]
@@ -233,14 +232,7 @@ def own_track(g, sess=None):
            for h in OWN_H if d + h <= leads[-1]]
     if not pts:
         return None
-    turn = None
-    prev = g[g.time == t - pd.Timedelta(hours=24)]
-    p48 = [q for q in pts if q[0] == 48]
-    if len(prev) and p48:
-        h_now = bearing(prev.LAT.iloc[0], prev.LON.iloc[0], last.LAT, last.LON)
-        h_fut = bearing(last.LAT, last.LON, p48[0][1], p48[0][2])
-        turn = round(float((h_fut - h_now + 180) % 360 - 180))     # +: 시계 방향(오른쪽)으로 꺾임
-    return {"issued": t.strftime("%Y-%m-%dT%H"), "cycle": c.strftime("%Y-%m-%dT%H"), "points": pts, "turn48": turn}
+    return {"issued": t.strftime("%Y-%m-%dT%H"), "cycle": c.strftime("%Y-%m-%dT%H"), "points": pts}
 
 
 # ---------------------------------------------------------------- 특성

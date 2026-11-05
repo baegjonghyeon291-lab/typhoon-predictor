@@ -39,16 +39,16 @@ def arrival_range(tr, features):
     return q(.1).fit(tr[features], y), q(.9).fit(tr[features], y), delta
 
 
-def calibration(tr, features):
+def calibration(tr, features, target="hit"):
     """학습 기간 안에서 태풍 단위 5겹 교차 예측 점수로 Platt 보정 [a, b] 를 맞춘다.
     학습 자료에 맞춘 트리는 학습 자료에서 과신하므로(학습 자료 '50%'가 실제 94%) 교차 예측으로만 맞춘다.
     검증(2015~)에서 한국 '50~70%'가 실제 38%로 과신, 일본 '10~20%'가 실제 24%로 과소였던 것을 바로잡는다."""
     oof = np.zeros(len(tr))
-    for a, b in GroupKFold(5).split(tr, tr.hit, tr.SID):
+    for a, b in GroupKFold(5).split(tr, tr[target], tr.SID):
         m = HistGradientBoostingClassifier(**CLF_PARAMS)
-        m.fit(tr.iloc[a][features], tr.hit.iloc[a])
+        m.fit(tr.iloc[a][features], tr[target].iloc[a])
         oof[b] = m.decision_function(tr.iloc[b][features])
-    lr = LogisticRegression().fit(oof[:, None], tr.hit)
+    lr = LogisticRegression().fit(oof[:, None], tr[target])
     return [round(float(lr.coef_[0][0]), 4), round(float(lr.intercept_[0]), 4)]
 
 

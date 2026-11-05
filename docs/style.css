@@ -378,3 +378,13 @@ tbody tr:hover { background: rgba(79,209,232,.07); }
   .top nav { gap: 14px; }
   .top nav a { font-size: 14.5px; }
 }
+
+/* 방향 중심 */
+.chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; }
+.chart-head h3 { margin: 0; }
+#turnTable th, #turnTable td { white-space: normal; }
+.h-lead { display: block; margin: 2px 0 4px; font-weight: 700; color: var(--text); }
+.storm-list .cmp + .cmp-cap { margin-top: 12px; }
+.storm-list .eta + .cmp-cap { margin-top: 12px; }
+.reach-box > summary { cursor: pointer; padding: 10px 0; font-size: 15px; font-weight: 700; color: var(--muted); }
+.reach-box > .article { margin-top: 12px; }
