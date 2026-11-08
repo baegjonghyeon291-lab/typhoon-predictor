@@ -430,7 +430,7 @@ function renderNow(latest) {
   const details = (s, c, label) => {
     const v = s[c];
     if (v.arrived) return "";
-    return (v.p >= .2 ? whenLines(v, s, label) : "") + (v.why?.length ? `<div class="eta"><span class="who">${label} 요인별 영향(없을 때 대비)</span> ${whyText(v.why)}</div>` : "");
+    return (v.p >= .2 ? whenLines(v, s, label) : "") + (v.why?.length ? `<div class="eta"><span class="who">${label} 요인별 영향(그 요인이 없을 때와 비교)</span> ${whyText(v.why)}</div>` : "");
   };
 
   // data_until 은 마지막 관측 시각이라 태풍이 없으면 멈춰 있다. 신선도는 갱신 시각(generated)으로 따진다
@@ -557,7 +557,7 @@ function renderNow(latest) {
     li.innerHTML = `<span class="who">최근 한국 근접 태풍</span>`
       + `<div class="s-head"><b>${stormFull(s)}</b>${lv != null ? `<span class="lv" style="--c:${LV[lv].color};--ci:${LV[lv].ink}">${lvLabel(lv)}</span>` : `<span class="lv" style="--c:${NO_LV};--ci:#9bb8cd">강도 기록 없음</span>`}</div>`
       + `<div class="vit">${s.season}년 ${s.arrival ? `${kst(s.arrival)} 한국 200km 진입` : `${kst(s.closest.t)} 한국 도시까지 최단 ${s.closest.km}km`}</div>`
-      + `<div class="vit">${lead == null ? "한국 도달 예측 없음" : `${s.arrival ? "한국 첫 도달 예측" : "빗나간 한국 도달 예측"} ${lead}시간 전`}${dmg ? ` · 재산피해 ${won(dmg)}` : ""}</div>`
+      + `<div class="vit">${lead == null ? "한국 도달 예측 없음" : `${s.arrival ? "한국 첫 도달 예측" : "한국 도달 예측(빗나감)"} ${lead}시간 전`}${dmg ? ` · 재산피해 ${won(dmg)}` : ""}</div>`
       + `<a class="last-link" href="#history">지난 태풍에서 보기</a>`;
     list.appendChild(li);
     const layer = L.layerGroup().addTo(map), last = s.track[s.track.length - 1];
@@ -609,7 +609,7 @@ function renderCompare(stats, kma) {
   $("metrics").innerHTML = tableHtml(["2015년~", "자체 모델", "기상청"], [
     ["도달 예측 기준", `확률 ${pct(WARN_P)} 이상`, "예보 경로 200km 진입"],
     ["첫 도달 예측(중앙값)", cell(me.median_warning_lead_h, "시간 전"), cell(k.median_warning_lead_h, "시간 전")],
-    ["빗나간 도달 예측", fa && has(fa.false_alarm_ratio) ? `${pct(fa.false_alarm_ratio)}(${fa.warned_storms}개 중)` : "–",
+    ["빗나간 도달 예측 비율", fa && has(fa.false_alarm_ratio) ? `${pct(fa.false_alarm_ratio)}(${fa.warned_storms}개 중)` : "–",
       has(ks.false_alarm_ratio) ? `${pct(ks.false_alarm_ratio)}(${ks.warned_storms}개 중)` : "미집계"],
     ["진입 시각 오차(평균)", cell(x.arrival_mae_h, "시간"),
       has(ks.entry_mae_h) ? `${ks.entry_mae_h}시간(진입 예측한 발표 ${ks.entry_issues}건)` : "미집계"],
@@ -677,10 +677,10 @@ function renderHistory(history, damage, review = {}) {
       + (it.lv != null ? ` · ${it.lv ? `${lvLabel(it.lv)}(${LV[it.lv].name}, ` : `${lvLabel(0)}(`}최대 ${it.peak}kt${cur.wind_usa ? ", 미국 풍속 환산" : ""})` : "")
       + (it.dmg ? ` · 재산피해 ${won(it.dmg)}` : "")
       + (cur.arrival ? ` · 한국 200km 진입 ${kst(cur.arrival)} · ${first ? `한국 첫 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`
-        : ` · 한국 도시까지 최단 ${cur.closest.km}km(${kst(cur.closest.t)}) · ${first ? `빗나간 한국 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`)
+        : ` · 한국 도시까지 최단 ${cur.closest.km}km(${kst(cur.closest.t)}) · ${first ? `한국 도달 예측(빗나감) ${lead}시간 전` : "한국 도달 예측 없음"}`)
       + (cur.arrival_japan ? ` · 일본 200km 진입 ${kst(cur.arrival_japan)}` : "")
       + turnLine(review[cur.sid])
-      + (cur.peak ? `<span class="h-why">한국 최고 확률 ${pct(cur.peak.p)}(${kst(cur.peak.t)})${cur.peak.why?.length ? ` · 요인별 영향(없을 때 대비): ${whyText(cur.peak.why)}` : ""}</span>` : "");
+      + (cur.peak ? `<span class="h-why">한국 최고 확률 ${pct(cur.peak.p)}(${kst(cur.peak.t)})${cur.peak.why?.length ? ` · 요인별 영향(그 요인이 없을 때와 비교): ${whyText(cur.peak.why)}` : ""}</span>` : "");
   }
 
   function setFrame(i) {
@@ -820,7 +820,7 @@ function guard(id, data, fn) {
     console.warn(id, e);
     if (id === "now") {
       $("nowList").innerHTML = `<li class="empty" style="cursor:default;animation:none">${FAIL_HTML}</li>`;
-      if (!$("nowMap").children.length) $("nowMap").innerHTML = `<p class="map-empty">자료가 없어 지도를 그리지 못했어요</p>`;
+      if (!$("nowMap").children.length) $("nowMap").innerHTML = `<p class="map-empty">자료가 없어 지도를 그리지 못했습니다</p>`;
     }
     else unavailable(id);
   }

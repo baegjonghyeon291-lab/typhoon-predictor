@@ -401,7 +401,7 @@ def download(start_year=FIRST_YEAR, end_year=None, force_months=(), workers=4, g
                 if "queued requests" in low or "maximum number" in low:    # 대기열 한도(남의 작업 포함)
                     qwait += 1
                     if not active and qwait >= MAX_QWAIT:
-                        log(f"  [중단] 대기열 한도가 {MAX_QWAIT}회(약 {MAX_QWAIT * 2}분) 계속됨. 기존 CDS 작업이 끝나야 함")
+                        log(f"  [중단] 대기열 한도에 {MAX_QWAIT}번 연속으로 걸림(약 {MAX_QWAIT * 2}분). 기존 CDS 작업이 끝난 뒤 다시 실행")
                         return failed + [(x.name, "대기열 한도 지속") for x in queue]
                     backoff_until = time.time() + 120
                     break

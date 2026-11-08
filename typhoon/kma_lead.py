@@ -11,7 +11,7 @@
   몇 시간 늦으므로 선행시간은 그만큼 과대평가될 수 있다.
 - 도착: IBTrACS 6시간 자료에서 한국 6개 도시 200km(in_korea) 안에 처음 들어온 시각
   (analyze.py / features.add_targets 와 같은 정의).
-- 선행시간이 0 이하(도착 뒤 첫 발표 또는 끝내 예측 못함)는 우리 모델 형식에 맞춰 0 으로 둔다.
+- 선행시간이 0 이하(도착 뒤 첫 발표 또는 끝내 예측 못함)는 자체 모델 형식에 맞춰 0 으로 둔다.
 """
 import json
 import re
@@ -24,7 +24,7 @@ from .data import CITIES, RADIUS_KM, ROOT, haversine, load
 KMA = ROOT / "data" / "kma" / "typhoon"
 OUT = ROOT / "reports" / "kma_lead.json"
 LEADS = [24, 48, 72, 96, 120]
-SPLIT_YEAR = 2015  # train.SPLIT_YEAR 와 같은 값(우리 모델 검증 기간)
+SPLIT_YEAR = 2015  # train.SPLIT_YEAR 와 같은 값(자체 모델 검증 기간)
 
 
 def norm(name):
@@ -202,7 +202,7 @@ def main():
     hit["lead_first_issue_h"] = h(hit.arrival, hit.kma_first)
     hit["lead_fcst_korea_h"] = h(hit.arrival, hit.kma_fcst_korea)
     hit["lead_fcst_korea_interp_h"] = h(hit.arrival, hit.kma_fcst_korea_interp)
-    # 우리 모델과 같은 대상: 도착 전 기록이 있는 태풍(IBTrACS 첫 기록이 도착보다 앞)
+    # 자체 모델과 같은 대상: 도착 전 기록이 있는 태풍(IBTrACS 첫 기록이 도착보다 앞)
     hit = hit[hit.t0 < hit.arrival]
 
     def block(d):
@@ -224,7 +224,7 @@ def main():
         "eff123_and_in_korea": int(len(hit[hit.EFF.isin([1, 2, 3])])),
     }
 
-    # 3) 우리 모델 비교
+    # 3) 자체 모델 비교
     model = None
     ap = ROOT / "reports" / "analysis.json"
     if ap.exists():
@@ -260,7 +260,7 @@ def main():
         "eff_vs_in_korea": agree,
         "notes": [
             "기상청 발표 시각은 TYP_TM(분석시각, UTC). 실제 공개 시각은 이보다 늦다.",
-            "선행시간 0 이하·예측 없음은 0으로 두고 비율 계산(우리 모델 warning_lead 와 같은 방식). raw 는 음수 포함 원값.",
+            "선행시간 0 이하·예측 없음은 0으로 두고 비율 계산(자체 모델 warning_lead 와 같은 방식). raw 는 음수 포함 원값.",
             "first_fcst_track_in_korea: 예측점(FT=1) 중 한국 6개 도시 200km 안 점이 처음 나온 발표. interp1h 는 점 사이 직선 보간.",
         ],
     }

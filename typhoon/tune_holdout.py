@@ -1,5 +1,5 @@
 """모델 설정(train.CLF_PARAMS)과 경보 기준(analyze.THRESHOLD)을 2015년~ 검증 성능으로 골랐기 때문에,
-그 기간을 보지 않아도 같은 선택이 나오는지 확인한다. 학습 ~2004, 비교 2005~2014. 2015년~ 자료는 쓰지 않는다.
+그 기간을 보지 않아도 같은 선택이 나오는지 확인한다. 학습 ~2004, 검증 2005~2014. 2015년~ 자료는 쓰지 않는다.
 
     python -m typhoon.tune_holdout     → reports/tuning_holdout.txt
 """
