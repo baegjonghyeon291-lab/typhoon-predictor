@@ -8,10 +8,11 @@
 <script>document.documentElement.classList.add("js")</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="core.css?v=20261109-2">
 <link rel="stylesheet" href="style.css?v=20261109-12">
+<link rel="stylesheet" href="look.css?v=20261109-1">
 <script>
 /* D06 지면: 크림 종이 + 세리프 + 테라코타 하나 */
 window.THEME_C = { korea: "#c2462b", japan: "#5a534a", muted: "#8b8276", text: "#2b2722", ink: "#1d1a17", grid: "rgba(29,26,23,.07)", warn: "#8b8276" };
@@ -19,7 +20,7 @@ window.THEME_TIP = { backgroundColor: "#1d1a17", borderColor: "#1d1a17", borderW
 window.THEME_TENSION = 0;
 window.THEME_REFLINE = "rgba(29,26,23,.45)";
 window.PAD_L = 48;
-const SERIF = "'Noto Serif KR', serif";
+const SERIF = "'Pretendard Variable', Pretendard, sans-serif";
 
 // 지난 태풍: 가는 선 두 줄, 면 없음. 일본은 짙은 회갈색 점선
 window.HIST_DATA = (data, C) => {
@@ -100,6 +101,7 @@ window.KEYFIGS = (latest, live, u) => {
     + (rest.length ? `<ul class="cv-more">${rest.map(r => `<li><b>${u.stormName(r)}</b><span>한국 ${r.korea.arrived ? "진입" : u.pctCard(r.korea.p)}</span><span>일본 ${r.japan.arrived ? "진입" : u.pctCard(r.japan.p)}</span></li>`).join("")}</ul>` : "");
 };
 </script>
+<script src="look.js?v=20261109-1"></script>
 </head>
 <body>
 <header class="top">
@@ -222,6 +224,6 @@ window.KEYFIGS = (latest, live, u) => {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=20261109-10"></script>
+<script src="app.js?v=20261109-11"></script>
 </body>
 </html>
