@@ -948,7 +948,7 @@ function renderReview(review, history) {
   $("turnStats").innerHTML = TURN_SRC.map(([k, name, mk]) => {
     const have = rows.filter(x => x.r[k] !== "none" && x.r[k] !== undefined), hit = have.filter(x => x.r[k] && x.r[k].lead_h != null);
     const med = median(hit.map(x => x.r[k].lead_h));
-    return `<span class="tk"><i class="mk ${mk}"></i><b>${name}</b> ${have.length}개 중 ${hit.length}개를 미리 맞힘${med == null ? "" : ` · 중앙 ${Math.round(med)}시간 전`}</span>`;
+    return `<span class="tk"><i class="mk ${mk}"></i><b>${name}</b> ${have.length}개 중 ${hit.length}개를 미리 예측${med == null ? "" : ` · 중앙값 ${Math.round(med)}시간 전`}</span>`;
   }).join("");
   const SPAN = 120, x = h => `${(1 - Math.min(h, SPAN) / SPAN) * 100}%`;
   $("turnAxis").innerHTML = [120, 96, 72, 48, 24, 0].map(h => `<span style="left:${x(h)}">${h ? `${h / 24}일 전` : "전향"}</span>`).join("");
@@ -973,7 +973,7 @@ function renderModel(stats) {
   const draw = () => {
     const rows = [["경로 모델", m[country], (a.model_warning_lead || {})[country] || {}],
       ["환경 모델", (m.full || {})[country] || m[country], (a.model_warning_lead_full || {})[country] || {}]];
-    $("modelTable").innerHTML = `<table class="mt"><thead><tr><th></th><th>AUC</th><th>확률 보정(Brier)</th><th>도착 시각 오차</th><th>도착 80% 범위 적중</th><th>첫 도달 예측</th></tr></thead><tbody>`
+    $("modelTable").innerHTML = `<table class="mt"><thead><tr><th></th><th>AUC</th><th>확률 보정(Brier)</th><th>도착 시각 오차</th><th>80% 범위 안에 도착</th><th>첫 도달 예측</th></tr></thead><tbody>`
       + rows.map(([name, x, w], i) => `<tr${i ? ' class="main"' : ""}><th scope="row">${name}</th>`
         + `<td><b>${x.auc.toFixed(3)}</b>${bar(x.auc, .5, 1)}</td>`
         + `<td><span class="was">${x.brier_uncalibrated.toFixed(4)}</span> → <b>${x.brier.toFixed(4)}</b></td>`
@@ -1010,7 +1010,7 @@ function renderTrack(t) {
       line("GFS 결합", t.champi.map(r => r.blend * 100), C.korea, { borderWidth: 2.6, pointRadius: 0 })] },
       options: opts({ min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 50 } }, "%", { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }) });
   }, .05);
-  $("turnAuc").innerHTML = `<table class="auc"><thead><tr><th>방법</th><th>AUC</th><th>맞힘</th><th>예측 중 실제</th></tr></thead><tbody>`
+  $("turnAuc").innerHTML = `<table class="auc"><thead><tr><th>방법</th><th>AUC</th><th>실제 전향 중 맞힘</th><th>전향 예측이 맞은 비율</th></tr></thead><tbody>`
     + t.turn.map((r, i) => `<tr${i === t.turn.length - 1 ? ' class="best"' : ""}><td>${r.name}</td><td><b>${r.auc.toFixed(3)}</b><i class="aucbar" style="--w:${(r.auc - .5) / .5 * 100}%"></i></td><td>${pct(r.hit)}</td><td>${pct(r.precision)}</td></tr>`).join("")
     + `</tbody></table>`;
 }
