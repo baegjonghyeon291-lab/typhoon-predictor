@@ -697,12 +697,12 @@ function renderHistory(history, damage, review = {}) {
   function summary() {
     const lead = firstLead(cur), first = lead != null;
     const it = items[history.indexOf(cur)];
-    return `<b>${cur.season} ${stormFull(cur)}</b>`
+    return `<b>${cur.season} ${stormFull(cur)}</b>` + (""
       + (it.lv != null ? ` · ${it.lv ? `${lvLabel(it.lv)}(${LV[it.lv].name}, ` : `${lvLabel(0)}(`}최대 ${it.peak}kt${cur.wind_usa ? ", 미국 풍속 환산" : ""})` : "")
       + (it.dmg ? ` · 재산피해 ${won(it.dmg)}` : "")
       + (cur.arrival ? ` · 한국 200km 진입 ${kst(cur.arrival)} · ${first ? `한국 첫 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`
         : ` · 한국 도시까지 최단 ${cur.closest.km}km(${kst(cur.closest.t)}) · ${first ? `한국 도달 예측(빗나감) ${lead}시간 전` : "한국 도달 예측 없음"}`)
-      + (cur.arrival_japan ? ` · 일본 200km 진입 ${kst(cur.arrival_japan)}` : "")
+      + (cur.arrival_japan ? ` · 일본 200km 진입 ${kst(cur.arrival_japan)}` : "")).replace(/^ · /, "")
       + turnLine(review[cur.sid])
       + (cur.peak ? `<span class="h-why">한국 최고 확률 ${pct(cur.peak.p)}(${kst(cur.peak.t)})${cur.peak.why?.length ? ` · 요인별 영향(그 요인이 없을 때와 비교): ${whyText(cur.peak.why)}` : ""}</span>` : "");
   }
@@ -818,7 +818,7 @@ function renderHistory(history, damage, review = {}) {
         },
         scales: {
           x: { type: "linear", bounds: "data", title: { display: true, text: `한국 ${refName()} 기준` }, afterBuildTicks: a => { a.ticks = []; for (let v = Math.ceil(a.min / 24) * 24; v <= a.max; v += 24) a.ticks.push({ value: v }); }, ticks: { callback: v => v === 0 ? "0" : `${v > 0 ? "+" : ""}${v}h`, maxRotation: 0, autoSkip: true } },
-          y: { min: 0, max: 100, ticks: { callback: v => v + "%" } },
+          y: { min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 50 } },
         },
         plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => i[0].parsed.x < 0 ? `${refName()} ${-i[0].parsed.x}시간 전` : i[0].parsed.x === 0 ? refName() : `${refName()} ${i[0].parsed.x}시간 뒤`, label: c => `${c.dataset.label} ${c.parsed.y.toFixed(0)}%` } } },
       },
@@ -948,7 +948,7 @@ function renderReview(review, history) {
   $("turnStats").innerHTML = TURN_SRC.map(([k, name, mk]) => {
     const have = rows.filter(x => x.r[k] !== "none" && x.r[k] !== undefined), hit = have.filter(x => x.r[k] && x.r[k].lead_h != null);
     const med = median(hit.map(x => x.r[k].lead_h));
-    return `<div class="ts"><span><i class="mk ${mk}"></i>${name}</span><b>${hit.length}<small>/${have.length}</small></b><em>${med == null ? "–" : `${Math.round(med)}시간 전`}</em></div>`;
+    return `<span class="tk"><i class="mk ${mk}"></i><b>${name}</b> ${have.length}개 중 ${hit.length}개를 미리 맞힘${med == null ? "" : ` · 중앙 ${Math.round(med)}시간 전`}</span>`;
   }).join("");
   const SPAN = 120, x = h => `${(1 - Math.min(h, SPAN) / SPAN) * 100}%`;
   $("turnAxis").innerHTML = [120, 96, 72, 48, 24, 0].map(h => `<span style="left:${x(h)}">${h ? `${h / 24}일 전` : "전향"}</span>`).join("");
@@ -965,44 +965,27 @@ function renderReview(review, history) {
 }
 
 /* ---------- 모델 성능 ---------- */
+// 경로 모델과 환경 모델(기본)을 한 표로. 숫자 옆 가는 막대는 같은 열 안에서만 비교
 function renderModel(stats) {
   const m = stats.metrics, a = stats.analysis;
-  const barOpts = (extra = {}) => ({ maintainAspectRatio: false, animation: false, plugins: { legend: { display: true, position: "top", align: "end", labels: { boxWidth: 10, boxHeight: 10 } } }, ...extra });
-  let country = "korea", charts = [];
+  let country = "korea";
+  const bar = (v, lo, hi, mark) => `<i class="mt-bar"><u style="width:${Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * 100}%"></u>${mark != null ? `<s style="left:${(mark - lo) / (hi - lo) * 100}%"></s>` : ""}</i>`;
   const draw = () => {
-    const path = m[country], env = (m.full || {})[country] || path;
-    const lead = c => (a.model_warning_lead_full || {})[c] || a.model_warning_lead[c] || {};
-    const fig = (name, v, sub) => `<div class="mf"><span>${name}</span><b>${v}</b><em>${sub}</em></div>`;
-    $("modelFigs").innerHTML = fig("AUC", env.auc.toFixed(3), `경로 모델 ${path.auc.toFixed(3)}`)
-      + fig("도착 시각 오차", `±${env.arrival_mae_h}<i>시간</i>`, `경로 모델 ±${path.arrival_mae_h}시간`)
-      + fig("80% 범위 적중", `${Math.round(env.arrival_range80_coverage * 100)}<i>%</i>`, `범위 폭 ${Math.round(env.arrival_range80_median_width_h)}시간`)
-      + fig("첫 도달 예측", `${lead(country).median_warning_lead_h ?? "–"}<i>시간 전</i>`, `검증 태풍 ${env.test_storms_hit}개`);
-    charts.forEach(c => c.destroy());
-    charts = [];
-    if (!window.Chart) return;
-    const vals = { 보정전: [path.brier_uncalibrated, env.brier_uncalibrated], 보정후: [path.brier, env.brier] };
-    const lab = { id: "lab", afterDatasetsDraw(c) { const ctx = c.ctx; ctx.save(); ctx.font = `700 13px ${Chart.defaults.font.family}`; ctx.textAlign = "center"; c.data.datasets.forEach((d, di) => c.getDatasetMeta(di).data.forEach((b, i) => { ctx.fillStyle = d.backgroundColor; ctx.fillText(d.fmt(d.data[i]), b.x, b.y - 6); })); ctx.restore(); } };
-    charts.push(new Chart($("brierChart"), {
-      type: "bar", plugins: [lab],
-      data: { labels: ["경로 모델", "환경 모델"], datasets: [
-        { label: "보정 전", data: vals.보정전, backgroundColor: C.muted, fmt: v => v.toFixed(4), barPercentage: .7, categoryPercentage: .55 },
-        { label: "보정 후", data: vals.보정후, backgroundColor: C.korea, fmt: v => v.toFixed(4), barPercentage: .7, categoryPercentage: .55 }] },
-      options: barOpts({ layout: { padding: { top: 20 } }, scales: { y: { beginAtZero: true, grace: "15%", ticks: { maxTicksLimit: 4 } }, x: { grid: { display: false } } } }),
-    }));
-    const target = { id: "target", afterDatasetsDraw(c) { const { ctx, chartArea: ar, scales: { x } } = c, px = x.getPixelForValue(80); ctx.save(); ctx.strokeStyle = C.ink; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(px, ar.top - 6); ctx.lineTo(px, ar.bottom); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = C.ink; ctx.font = `600 12px ${Chart.defaults.font.family}`; ctx.textAlign = "center"; ctx.fillText("목표 80%", px, ar.top - 10); ctx.restore(); } };
-    const labH = { id: "labH", afterDatasetsDraw(c) { const ctx = c.ctx; ctx.save(); ctx.font = `700 14px ${Chart.defaults.font.family}`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = C.korea; c.getDatasetMeta(0).data.forEach((b, i) => ctx.fillText(`${Math.round(c.data.datasets[0].data[i])}%`, b.x + 8, b.y)); ctx.restore(); } };
-    charts.push(new Chart($("coverChart"), {
-      type: "bar", plugins: [target, labH],
-      data: { labels: ["경로 모델", "환경 모델"], datasets: [{ label: "적중", data: [path.arrival_range80_coverage * 100, env.arrival_range80_coverage * 100], backgroundColor: C.korea, barThickness: 26 }] },
-      options: { indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { top: 24, right: 40 } },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${Math.round(c.parsed.x)}%` } } },
-        scales: { x: { min: 50, max: 100, ticks: { callback: v => v + "%", stepSize: 10 } }, y: { grid: { display: false } } } },
-    }));
+    const rows = [["경로 모델", m[country], (a.model_warning_lead || {})[country] || {}],
+      ["환경 모델", (m.full || {})[country] || m[country], (a.model_warning_lead_full || {})[country] || {}]];
+    $("modelTable").innerHTML = `<table class="mt"><thead><tr><th></th><th>AUC</th><th>확률 보정(Brier)</th><th>도착 시각 오차</th><th>도착 80% 범위 적중</th><th>첫 도달 예측</th></tr></thead><tbody>`
+      + rows.map(([name, x, w], i) => `<tr${i ? ' class="main"' : ""}><th scope="row">${name}</th>`
+        + `<td><b>${x.auc.toFixed(3)}</b>${bar(x.auc, .5, 1)}</td>`
+        + `<td><span class="was">${x.brier_uncalibrated.toFixed(4)}</span> → <b>${x.brier.toFixed(4)}</b></td>`
+        + `<td><b>±${x.arrival_mae_h}</b>시간</td>`
+        + `<td><b>${Math.round(x.arrival_range80_coverage * 100)}</b>%${bar(x.arrival_range80_coverage * 100, 50, 100, 80)}<small>폭 ${Math.round(x.arrival_range80_median_width_h)}시간</small></td>`
+        + `<td><b>${w.median_warning_lead_h ?? "–"}</b>시간 전</td></tr>`).join("")
+      + `</tbody></table>`;
   };
   const tabs = $("modelTabs");
   tabs.innerHTML = [["korea", "한국"], ["japan", "일본"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === country}">${t}</button>`).join("");
   tabs.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; country = b.dataset.k; tabs.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); draw(); });
-  seen($("model"), draw, .05);
+  draw();
 }
 
 /* ---------- 경로 예측 ---------- */

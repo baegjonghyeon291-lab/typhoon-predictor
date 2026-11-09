@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700;900&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="core.css?v=20261109-2">
-<link rel="stylesheet" href="style.css?v=20261109-4">
+<link rel="stylesheet" href="style.css?v=20261109-8">
 <script>
 /* D06 지면: 크림 종이 + 세리프 + 테라코타 하나 */
 window.THEME_C = { korea: "#c2462b", japan: "#5a534a", muted: "#8b8276", text: "#2b2722", ink: "#1d1a17", grid: "rgba(29,26,23,.07)", warn: "#8b8276" };
@@ -172,7 +172,7 @@ window.KEYFIGS = (latest, live, u) => {
 <section id="review">
   <div class="wrap">
     <h2 class="sec-title">전향 복기</h2>
-    <div id="turnStats" class="turn-stats"></div>
+    <div id="turnStats" class="turn-key"></div>
     <div class="turn-head"><span></span><div class="turn-axis" id="turnAxis"></div><span></span></div>
     <ol id="turnList" class="turn-list"></ol>
   </div>
@@ -198,11 +198,7 @@ window.KEYFIGS = (latest, live, u) => {
   <div class="wrap">
     <h2 class="sec-title">모델 성능</h2>
     <div class="model-tabs seg" id="modelTabs" role="group" aria-label="나라"></div>
-    <div id="modelFigs" class="model-figs"></div>
-    <div class="model-grid">
-      <div class="chart-box"><h3>확률 보정 전후 오차(Brier, 낮을수록 좋음)</h3><div class="chart-wrap model-wrap"><canvas id="brierChart"></canvas></div></div>
-      <div class="chart-box"><h3>도착 시각 80% 범위에 실제가 들어온 비율</h3><div class="chart-wrap model-wrap"><canvas id="coverChart"></canvas></div></div>
-    </div>
+    <div id="modelTable" class="model-table"></div>
   </div>
 </section>
 
@@ -226,6 +222,6 @@ window.KEYFIGS = (latest, live, u) => {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=20261109-5"></script>
+<script src="app.js?v=20261109-6"></script>
 </body>
 </html>
