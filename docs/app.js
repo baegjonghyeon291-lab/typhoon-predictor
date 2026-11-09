@@ -807,7 +807,7 @@ function renderHistory(history, damage, review = {}) {
       type: "line", data, plugins: [cursorLine, endLabels],
       options: {
         maintainAspectRatio: false, animation: { duration: REDUCED ? 0 : 1200 }, interaction: { mode: "nearest", axis: "x", intersect: false },
-        layout: { padding: { right: 40 } },
+        layout: { padding: { right: 52 } },
         onClick(e, _, c) {                 // 누른 곳과 가장 가까운 시점으로 이동
           const x = c.scales.x.getValueForPixel(e.x);
           let best = 0;
@@ -975,11 +975,11 @@ function renderModel(stats) {
       ["환경 모델", (m.full || {})[country] || m[country], (a.model_warning_lead_full || {})[country] || {}]];
     $("modelTable").innerHTML = `<table class="mt"><thead><tr><th></th><th>AUC</th><th>확률 보정(Brier)</th><th>도착 시각 오차</th><th>80% 범위 안에 도착</th><th>첫 도달 예측</th></tr></thead><tbody>`
       + rows.map(([name, x, w], i) => `<tr${i ? ' class="main"' : ""}><th scope="row">${name}</th>`
-        + `<td><b>${x.auc.toFixed(3)}</b>${bar(x.auc, .5, 1)}</td>`
-        + `<td><span class="was">${x.brier_uncalibrated.toFixed(4)}</span> → <b>${x.brier.toFixed(4)}</b></td>`
-        + `<td><b>±${x.arrival_mae_h}</b>시간</td>`
-        + `<td><b>${Math.round(x.arrival_range80_coverage * 100)}</b>%${bar(x.arrival_range80_coverage * 100, 50, 100, 80)}<small>폭 ${Math.round(x.arrival_range80_median_width_h)}시간</small></td>`
-        + `<td><b>${w.median_warning_lead_h ?? "–"}</b>시간 전</td></tr>`).join("")
+        + `<td data-l="AUC"><b>${x.auc.toFixed(3)}</b>${bar(x.auc, .5, 1)}</td>`
+        + `<td data-l="확률 보정(Brier)"><span class="was">${x.brier_uncalibrated.toFixed(4)}</span> → <b>${x.brier.toFixed(4)}</b></td>`
+        + `<td data-l="도착 시각 오차"><b>±${x.arrival_mae_h}</b>시간</td>`
+        + `<td data-l="80% 범위 안에 도착"><b>${Math.round(x.arrival_range80_coverage * 100)}</b>%${bar(x.arrival_range80_coverage * 100, 50, 100, 80)}<small>폭 ${Math.round(x.arrival_range80_median_width_h)}시간</small></td>`
+        + `<td data-l="첫 도달 예측"><b>${w.median_warning_lead_h ?? "–"}</b>시간 전</td></tr>`).join("")
       + `</tbody></table>`;
   };
   const tabs = $("modelTabs");
@@ -1008,7 +1008,7 @@ function renderTrack(t) {
     new Chart($("champiChart"), { type: "line", plugins: [ref, endLabels], data: { labels: t.champi.map(r => r.kst), datasets: [
       line("기존 분류", t.champi.map(r => r.clf * 100), C.muted, { borderDash: [5, 4], pointRadius: 0 }),
       line("GFS 결합", t.champi.map(r => r.blend * 100), C.korea, { borderWidth: 2.6, pointRadius: 0 })] },
-      options: opts({ min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 50 } }, "%", { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }) });
+      options: opts({ min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 50 } }, "%", { maxRotation: 0, autoSkip: true, maxTicksLimit: innerWidth < 600 ? 4 : 7, callback(v) { const l = this.getLabelForValue(v); return innerWidth < 600 ? l.split(" ")[0] : l; } }) });
   }, .05);
   $("turnAuc").innerHTML = `<table class="auc"><thead><tr><th>방법</th><th>AUC</th><th>실제 전향 중 맞힘</th><th>전향 예측이 맞은 비율</th></tr></thead><tbody>`
     + t.turn.map((r, i) => `<tr${i === t.turn.length - 1 ? ' class="best"' : ""}><td>${r.name}</td><td><b>${r.auc.toFixed(3)}</b><i class="aucbar" style="--w:${(r.auc - .5) / .5 * 100}%"></i></td><td>${pct(r.hit)}</td><td>${pct(r.precision)}</td></tr>`).join("")

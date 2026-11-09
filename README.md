@@ -93,8 +93,20 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m typhoon.predict --sid 2026288N10161
 .venv/bin/python -m typhoon.export --update     # 사이트 데이터 갱신 → docs/data/
 .venv/bin/python -m typhoon.track      # 경로·전향 모델 실험 → reports/track_experiment.txt
+.venv/bin/python scripts/track_json.py # 경로 실험 리포트 → docs/data/track.json (사이트 '경로 예측')
 ```
 
 ## 웹사이트
 
-`docs/` 폴더가 GitHub Pages로 배포된다. 화면은 현재 태풍, 지난 태풍, 자체 모델 vs 기상청 세 가지다.
+`docs/` 폴더가 GitHub Pages로 배포된다. PC·태블릿·휴대폰 화면을 모두 맞춘다. 한 페이지에 여섯 부분이 있다.
+
+| 부분 | 내용 | 자료 |
+|---|---|---|
+| 현재 태풍 | 태풍 이름과 한국·일본 5일 안 확률, 확률 20% 이상이면 도착 예상 시각·범위. 지도에서 기관별 예보 경로를 켜고 끔. 기관 비교표 | `latest.json` |
+| 지난 태풍 | 이름 검색, 연도·단계·정렬, 전체 경로 한 지도, 다른 태풍 겹쳐 보기, 재생. 주소 `#history/2022-힌남노` 로 바로 열기 | `history.json`, `damage.json` |
+| 전향 복기 | 태풍마다 실제 전향 시점과 기상청·자체 경로·자체 분류가 처음 예측한 시점 | `review.json` |
+| 기상청 비교 | 진입 며칠 전에 도달을 예측했는지, 빗나간 비율·진입 시각 오차, 주요 요인 | `stats.json`, `kma_lead.json` |
+| 모델 성능 | 경로 모델·환경 모델의 AUC, 보정 전후 Brier, 도착 시각 오차, 80% 범위 적중, 첫 도달 예측 | `stats.json` |
+| 경로 예측 | 시간별 위치 오차(단순 연장·자체 모델·GFS 결합), 전향 판별 AUC, 참피 사례 | `track.json` |
+
+`track.json` 은 손으로 만든다. `reports/track_experiment.txt`·`gfs_track_experiment.txt` 가 바뀌면 `scripts/track_json.py` 를 다시 돌린다(테스트가 두 쪽이 같은지 확인한다).

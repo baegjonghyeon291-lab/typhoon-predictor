@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700;900&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="core.css?v=20261109-2">
-<link rel="stylesheet" href="style.css?v=20261109-8">
+<link rel="stylesheet" href="style.css?v=20261109-11">
 <script>
 /* D06 지면: 크림 종이 + 세리프 + 테라코타 하나 */
 window.THEME_C = { korea: "#c2462b", japan: "#5a534a", muted: "#8b8276", text: "#2b2722", ink: "#1d1a17", grid: "rgba(29,26,23,.07)", warn: "#8b8276" };
@@ -31,7 +31,7 @@ window.HIST_DATA = (data, C) => {
 // 비교: 시점별 롤리팝(가는 줄기 + 원), 값은 원 위에 세리프로 크게
 window.LEAD_CHART = ({ sets, leads, C }) => {
   const self = sets.find(d => d.label === "자체 모델"), kma = sets.find(d => d.label === "기상청");
-  const n = leads.length, at = i => n - 1 - i;                    // 5일 전 → 1일 전 순으로 왼쪽에서 오른쪽
+  const n = leads.length, at = i => n - 1 - i, narrow = innerWidth < 600;      // 휴대폰이면 글자·여백을 줄인다                    // 5일 전 → 1일 전 순으로 왼쪽에서 오른쪽
   const off = kma ? .17 : 0;
   const ds = [];
   if (kma) ds.push({ label: "기상청", data: kma.data.map((v, i) => ({ x: at(i) - off, y: v })), pointRadius: 6, pointHoverRadius: 7, pointBackgroundColor: "#f4efe6", pointBorderColor: "#8b8276", pointBorderWidth: 1.5, borderColor: "#8b8276", showLine: false, _c: "#8b8276", _w: 400 });
@@ -48,8 +48,9 @@ window.LEAD_CHART = ({ sets, leads, C }) => {
       const ctx = c.ctx, a = c.chartArea;
       ctx.save(); ctx.textAlign = "center"; ctx.textBaseline = "bottom";
       c.data.datasets.forEach((d, di) => c.getDatasetMeta(di).data.forEach((p, i) => {
+        if (narrow && d._w !== 700) return;
         ctx.fillStyle = d._c;
-        ctx.font = `${d._w} ${d._w === 700 ? 22 : 16}px ${SERIF}`;
+        ctx.font = `${d._w} ${narrow ? (d._w === 700 ? 15 : 12) : (d._w === 700 ? 22 : 16)}px ${SERIF}`;
         ctx.fillText(Math.round(d.data[i].y) + "%", p.x, p.y - 12);
       }));
       // 계열 이름: 맨 오른쪽 원 옆에 직접
@@ -57,7 +58,7 @@ window.LEAD_CHART = ({ sets, leads, C }) => {
       const tags = c.data.datasets.map((d, di) => ({ d, y: c.getDatasetMeta(di).data[0].y })).sort((p, q) => p.y - q.y);   // data[0] = 1일 전(맨 오른쪽)
       for (let k = 1; k < tags.length; k++) if (tags[k].y - tags[k - 1].y < 20) tags[k].y = tags[k - 1].y + 20;
       tags.forEach(({ d, y }) => {
-        ctx.fillStyle = d._c; ctx.font = `${d._w === 700 ? 700 : 500} 15px 'Pretendard Variable', Pretendard, sans-serif`;
+        ctx.fillStyle = d._c; ctx.font = `${d._w === 700 ? 700 : 500} ${narrow ? 12 : 15}px 'Pretendard Variable', Pretendard, sans-serif`;
         ctx.fillText(d.label, a.right + 14, Math.min(y, a.bottom));
       });
       ctx.restore();
@@ -66,12 +67,12 @@ window.LEAD_CHART = ({ sets, leads, C }) => {
   return {
     type: "scatter", data: { datasets: ds }, plugins: [lolli],
     options: {
-      maintainAspectRatio: false, animation: false, layout: { padding: { top: 34, right: 84 } },
+      maintainAspectRatio: false, animation: false, layout: { padding: { top: 34, right: narrow ? 58 : 84 } },
       interaction: { mode: "nearest", intersect: false },
       scales: {
         x: { type: "linear", min: -.6, max: n - .4, grid: { display: false }, border: { color: "#1d1a17" },
           afterBuildTicks: ax => { ax.ticks = leads.map((_, i) => ({ value: i })); },
-          ticks: { callback: v => `${leads[n - 1 - v] / 24}일 전`, color: "#2b2722", font: { size: 14, weight: 600 }, padding: 10 } },
+          ticks: { callback: v => narrow ? `${leads[n - 1 - v] / 24}일` : `${leads[n - 1 - v] / 24}일 전`, color: "#2b2722", font: { size: narrow ? 12 : 14, weight: 600 }, padding: 10 } },
         y: { min: 0, max: 100, border: { display: false }, grid: { color: "rgba(29,26,23,.08)" },
           afterBuildTicks: ax => { ax.ticks = [0, 50, 100].map(value => ({ value })); },
           ticks: { callback: v => v + "%", font: { size: 12 }, padding: 8 } },
@@ -222,6 +223,6 @@ window.KEYFIGS = (latest, live, u) => {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=20261109-7"></script>
+<script src="app.js?v=20261109-9"></script>
 </body>
 </html>

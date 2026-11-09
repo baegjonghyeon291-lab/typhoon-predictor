@@ -282,3 +282,86 @@ input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 
 /* 비교 성적표: 항목명 칸을 좁혀 숫자가 한 줄에 들어가게 */
 #metrics th:first-child, #metrics td:first-child { width: 92px; }
 #metrics tbody td:not(:first-child) { font-size: 15px; }
+
+/* ---------- 태블릿·휴대폰 ---------- */
+@media (max-width: 1100px) {
+  :root { --gut: 32px; }
+  #now { grid-template-columns: minmax(0, 1fr) minmax(360px, 46%); }
+  .cv-p b { font-size: 84px; }
+  .cmp-grid { grid-template-columns: minmax(0, 1fr); }
+  .lead-box { padding-right: 0; border-right: 0; }
+  .cmp-side { padding-left: 0; padding-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; }
+  #factors { margin-top: 0; }
+  .mt-wrap, #modelTable { overflow-x: auto; }
+}
+@media (max-width: 860px) {
+  :root { --gut: 18px; --top-h: 52px; }
+  /* 메뉴: 한 줄 가로 스크롤 */
+  .top { gap: 16px; }
+  .brand { flex-shrink: 0; font-size: 17px; }
+  .top nav { gap: 20px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .top nav::-webkit-scrollbar { display: none; }
+  .top nav a { flex-shrink: 0; font-size: 13.5px; }
+  /* 현재 태풍: 숫자 → 지도 → 표 순서로 세로 */
+  #now { display: flex; flex-direction: column; align-items: stretch; padding: 24px var(--gut) 48px; gap: 24px; }
+  .cover { display: contents; }
+  .keyfigs { order: 1; }
+  .cover-map { order: 2; position: static; }
+  .panel { order: 3; margin-top: 0; }
+  #nowMap { height: 62svh; min-height: 360px; max-height: 560px; }
+  .cv-name { font-size: clamp(48px, calc(320px / var(--n, 3)), 88px); }
+  .cv-quiet { font-size: 48px; }
+  .cv-en { font-size: 14px; letter-spacing: .2em; }
+  .cv-vit { margin-top: 18px; gap: 20px; }
+  .cv-p { margin-top: 24px; }
+  .cv-p > div + div { padding-left: 18px; }
+  .cv-p b { font-size: 60px; }
+  .cv-p b.in { font-size: 40px; }
+  .cmp { font-size: 13px; }
+  .cmp thead th:first-child, .cmp tbody th { width: 82px; }
+  .cmp td.self { font-size: 17px; }
+  /* 섹션 공통 */
+  #history, #compare, #review, #model, #track { padding-top: 64px; }
+  .sec-title { font-size: 26px; }
+  .foot { margin-top: 72px; }
+  /* 지난 태풍: 필터·목록 위, 지도·그래프 아래 */
+  .spread { grid-template-columns: minmax(0, 1fr); }
+  .toc { padding: 20px 0 0; border-right: 0; }
+  .hist-list { max-height: 300px; border-bottom: 1px solid var(--hair2); }
+  .page { padding: 24px 0 0; }
+  .hist-summary b { font-size: 30px; }
+  .hist-tools { flex-wrap: wrap; gap: 10px 18px; }
+  #histMap { height: 340px; }
+  .hist-bar { grid-template-columns: 36px 1fr; }
+  #scrubTime { grid-column: 1 / -1; text-align: left; min-width: 0; font-size: 14px; }
+  .hist-wrap { height: 220px; }
+  /* 전향 복기: 이름 칸 좁히고 날짜 칸은 숨김 */
+  .turn-key { flex-direction: column; gap: 6px; font-size: 13.5px; }
+  .turn-head, .turn-list li { grid-template-columns: 76px minmax(0, 1fr); gap: 0 10px; }
+  .turn-head > span:last-child, .tt { display: none; }
+  .turn-list button { flex-direction: column; gap: 0; padding: 6px 0; }
+  .turn-list button b { font-size: 15px; }
+  .turn-axis span { font-size: 11px; }
+  .turn-axis span:nth-child(2), .turn-axis span:nth-child(4) { display: none; }
+  /* 비교 */
+  .lead-wrap { height: 340px; }
+  .cmp-side { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  /* 모델 성능: 표 대신 모델마다 항목을 세로로 */
+  .mt, .mt tbody, .mt tr { display: block; }
+  .mt thead { display: none; }
+  .mt tr { padding: 14px 0 10px; border-bottom: 1px solid var(--hair2); }
+  .mt tbody th { display: block; width: auto; padding: 0 0 6px; border: 0; font-size: 15px; }
+  .mt td { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; padding: 5px 0; border: 0; white-space: normal; }
+  .mt td::before { content: attr(data-l); flex: 0 0 132px; font-size: 13px; color: var(--muted); }
+  .mt td b, .mt tr:not(.main) td b { font-size: 20px; }
+  .mt-bar { display: none; }
+  .mt small { display: inline; margin: 0 0 0 6px; }
+  /* 경로 예측: 한 단 */
+  .track-grid { grid-template-columns: minmax(0, 1fr); }
+  .track-grid > div + div { padding-left: 0; border-left: 0; margin-top: 40px; }
+  .track-grid > div:first-child { padding-right: 0; }
+  .track-wrap { height: 280px; }
+  .auc td:nth-child(2) { width: auto; }
+  .auc .aucbar { display: none; }
+  .auc th, .auc td { padding-left: 10px; font-size: 13px; white-space: normal; }
+}
