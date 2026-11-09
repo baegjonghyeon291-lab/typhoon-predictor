@@ -178,3 +178,87 @@ input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 
 /* 자료가 오래됐을 때만 나타나는 경고(평소엔 숨김) */
 .stale-note { margin: 0 0 18px; padding: 10px 14px; border-left: 3px solid var(--acc); background: rgba(194,70,43,.07); color: #2b2722; font-size: 14px; }
 .stale-note a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---------- 추가 기능 ---------- */
+#review, #model, #track { padding: 104px 0 0; }
+
+/* 현재 태풍 지도: 예보 경로 켜고 끄기 */
+.src-toggle { display: grid; gap: 2px; padding: 8px 12px; background: rgba(244,239,230,.97); border: 1px solid var(--rule); font-size: 13px; font-weight: 600; color: var(--ink); }
+.src-toggle label { display: flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; }
+.src-toggle input { margin: 0; accent-color: var(--acc); }
+.src-toggle i { width: 18px; height: 0; }
+
+/* 지난 태풍: 검색·도구 */
+#histQ { width: 100%; padding: 6px 0; border: 0; border-bottom: 1px solid var(--rule); background: transparent; font-family: var(--serif); font-size: 16px; color: var(--ink); outline: none; border-radius: 0; }
+#histQ::placeholder { color: var(--hair2); }
+#histQ:focus { border-bottom-color: var(--acc); }
+.hist-tools { display: flex; align-items: center; gap: 22px; margin-top: 22px; padding-bottom: 10px; border-bottom: 1px solid var(--hair2); }
+.hist-tools button { padding: 2px 0; background: none; border: 0; border-bottom: 1px solid transparent; font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.hist-tools button:hover { color: var(--ink); }
+#histAll[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--acc); }
+#histLink { margin-left: auto; }
+#histCmp { padding: 2px 22px 2px 0; border: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6' fill='none' stroke='%231d1a17'/%3E%3C/svg%3E") no-repeat right 4px center; appearance: none; -webkit-appearance: none; font-size: 14px; font-weight: 700; color: var(--ink); cursor: pointer; border-radius: 0; }
+.tools-gap { flex: 1; }
+#histMap { margin-top: 0; }
+.all-on .hist-bar, .all-on .chart-box { opacity: .35; pointer-events: none; }
+.leaflet-tooltip.all-tip { padding: 3px 8px; background: var(--paper); border: 1px solid var(--rule); border-radius: 0; box-shadow: none; font-family: var(--serif); font-weight: 700; color: var(--ink); }
+.leaflet-tooltip.all-tip::before { display: none; }
+
+/* 전향 복기 */
+.turn-stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 40px; border-bottom: 1px solid var(--hair2); }
+.ts { padding: 0 0 28px; }
+.ts + .ts { padding-left: 40px; border-left: 1px solid var(--hair2); }
+.ts span { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: var(--ink); }
+.ts b { display: block; margin-top: 6px; font-family: var(--serif); font-size: 80px; font-weight: 400; line-height: 1; letter-spacing: -.04em; color: var(--ink); font-variant-numeric: tabular-nums lining-nums; }
+.ts b small { font-size: .38em; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.ts em { display: block; margin-top: 8px; font-style: normal; font-family: var(--serif); font-size: 20px; font-weight: 600; color: var(--acc); }
+.mk { position: relative; display: inline-block; width: 12px; height: 12px; flex-shrink: 0; }
+.mk.sq { background: var(--ink); }
+.mk.dot { border-radius: 50%; background: var(--acc); }
+.mk.tri { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 12px solid var(--jp); }
+.turn-list .mk.miss { background: none; border: 1.5px solid currentColor; }
+.turn-list .mk.miss.sq { color: var(--ink); } .turn-list .mk.miss.dot { color: var(--acc); }
+.turn-list .mk.miss.tri { border: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 12px solid var(--hair2); }
+.turn-head, .turn-list li { display: grid; grid-template-columns: 200px minmax(0, 1fr) 130px; gap: 0 28px; align-items: center; }
+.turn-head { margin-top: 28px; height: 30px; border-bottom: 1px solid var(--rule); }
+.turn-axis { position: relative; height: 100%; }
+.turn-axis span { position: absolute; bottom: 6px; transform: translateX(-50%); font-size: 12.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.turn-axis span:last-child { color: var(--acc); }
+.turn-list li { border-bottom: 1px solid var(--hair); min-height: 42px; }
+.turn-list button { display: flex; align-items: baseline; gap: 10px; padding: 9px 0; background: none; border: 0; text-align: left; cursor: pointer; }
+.turn-list button b { font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--ink); }
+.turn-list button span { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.turn-list button:hover b { color: var(--acc); }
+.tl { position: relative; height: 100%; min-height: 42px; background: repeating-linear-gradient(90deg, transparent 0 calc(20% - 1px), var(--hair) calc(20% - 1px) 20%); border-right: 1px solid var(--acc); }
+.tl .mk { position: absolute; top: 50%; transform: translate(-50%, -50%); }
+.tl .mk.sq { margin-top: -9px; } .tl .mk.tri { margin-top: 9px; }
+.tt { font-size: 13px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 모델 성능 */
+.model-tabs { margin-top: 32px; }
+.model-tabs button { font-size: 16px; }
+.model-figs { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 24px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--hair2); }
+.mf { padding: 24px 0 28px; }
+.mf + .mf { padding-left: 32px; border-left: 1px solid var(--hair2); }
+.mf span { font-size: 15px; font-weight: 700; color: var(--ink); }
+.mf b { display: block; margin-top: 4px; font-family: var(--serif); font-size: 76px; font-weight: 400; line-height: 1.05; letter-spacing: -.04em; color: var(--acc); font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+.mf b i { font-style: normal; font-size: .3em; letter-spacing: 0; margin-left: 4px; color: var(--ink); }
+.mf em { display: block; margin-top: 6px; font-style: normal; font-size: 13.5px; color: var(--muted); }
+.model-grid, .track-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 40px; }
+.model-grid > div + div, .track-grid > div + div { padding-left: 48px; border-left: 1px solid var(--hair2); }
+.model-grid > div:first-child, .track-grid > div:first-child { padding-right: 48px; }
+.chart-box h3 { margin-bottom: 16px; font-family: var(--serif); font-size: 19px; font-weight: 700; color: var(--ink); }
+.model-wrap { height: 300px; }
+
+/* 경로 예측 */
+.track-wrap { height: 340px; }
+.track-grid.lower { margin-top: 56px; padding-top: 40px; border-top: 1px solid var(--hair2); }
+.auc { font-size: 15px; }
+.auc th, .auc td { padding: 14px 0 14px 16px; border-bottom: 1px solid var(--hair); }
+.auc th:first-child, .auc td:first-child { padding-left: 0; }
+.auc thead th { font-size: 13px; font-weight: 700; color: var(--muted); border-bottom: 1px solid var(--rule); }
+.auc td:first-child { font-weight: 600; color: var(--ink); }
+.auc td:nth-child(2) { width: 46%; text-align: left; }
+.auc td b { display: inline-block; min-width: 64px; font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--ink); }
+.auc .aucbar { display: inline-block; vertical-align: middle; width: calc(var(--w) * .7); height: 4px; margin-left: 10px; background: var(--muted); }
+.auc tr.best b { color: var(--acc); } .auc tr.best .aucbar { background: var(--acc); }

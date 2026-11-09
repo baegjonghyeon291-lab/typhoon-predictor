@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700;900&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="core.css?v=20261109-1">
-<link rel="stylesheet" href="style.css?v=20261109-1">
+<link rel="stylesheet" href="style.css?v=20261109-2">
 <script>
 /* D06 지면: 크림 종이 + 세리프 + 테라코타 하나 */
 window.THEME_C = { korea: "#c2462b", japan: "#5a534a", muted: "#8b8276", text: "#2b2722", ink: "#1d1a17", grid: "rgba(29,26,23,.07)", warn: "#8b8276" };
@@ -105,7 +105,10 @@ window.KEYFIGS = (latest, live, u) => {
   <nav aria-label="섹션">
     <a href="#now">현재 태풍</a>
     <a href="#history">지난 태풍</a>
+    <a href="#review">전향 복기</a>
     <a href="#compare">기상청 비교</a>
+    <a href="#model">모델 성능</a>
+    <a href="#track">경로 예측</a>
   </nav>
 </header>
 
@@ -135,6 +138,7 @@ window.KEYFIGS = (latest, live, u) => {
     <div class="spread">
       <div class="toc">
         <div class="hist-filter">
+          <input id="histQ" type="search" placeholder="태풍 이름" aria-label="태풍 이름 검색" autocomplete="off">
           <select id="histYear" aria-label="연도"></select>
           <div id="histLv" class="seg" role="group" aria-label="단계"></div>
           <div id="histSort" class="seg" role="group" aria-label="정렬"></div>
@@ -143,6 +147,11 @@ window.KEYFIGS = (latest, live, u) => {
       </div>
       <div class="page">
         <p id="histSummary" class="hist-summary"></p>
+        <div class="hist-tools">
+          <button type="button" id="histAll" aria-pressed="false">전체 경로</button>
+          <select id="histCmp" aria-label="겹쳐 볼 태풍"></select>
+          <button type="button" id="histLink">링크 복사</button>
+        </div>
         <div id="histMap" class="map" role="region" aria-label="지난 태풍 경로 지도"></div>
         <div class="hist-bar">
           <button id="play" type="button" aria-label="재생">▶</button>
@@ -155,6 +164,15 @@ window.KEYFIGS = (latest, live, u) => {
         </div>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="review">
+  <div class="wrap">
+    <h2 class="sec-title">전향 복기</h2>
+    <div id="turnStats" class="turn-stats"></div>
+    <div class="turn-head"><span></span><div class="turn-axis" id="turnAxis"></div><span></span></div>
+    <ol id="turnList" class="turn-list"></ol>
   </div>
 </section>
 
@@ -173,6 +191,32 @@ window.KEYFIGS = (latest, live, u) => {
     </div>
   </div>
 </section>
+
+<section id="model">
+  <div class="wrap">
+    <h2 class="sec-title">모델 성능</h2>
+    <div class="model-tabs seg" id="modelTabs" role="group" aria-label="나라"></div>
+    <div id="modelFigs" class="model-figs"></div>
+    <div class="model-grid">
+      <div class="chart-box"><h3>확률 보정 전후 오차(Brier, 낮을수록 좋음)</h3><div class="chart-wrap model-wrap"><canvas id="brierChart"></canvas></div></div>
+      <div class="chart-box"><h3>도착 시각 80% 범위에 실제가 들어온 비율</h3><div class="chart-wrap model-wrap"><canvas id="coverChart"></canvas></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="track">
+  <div class="wrap">
+    <h2 class="sec-title">경로 예측</h2>
+    <div class="track-grid">
+      <div class="chart-box"><h3>시간별 평균 위치 오차 · 검증 2015~</h3><div class="chart-wrap track-wrap"><canvas id="trackChart"></canvas></div></div>
+      <div class="chart-box"><h3>GFS 예보장 결합 · 평가 2024~</h3><div class="chart-wrap track-wrap"><canvas id="gfsChart"></canvas></div></div>
+    </div>
+    <div class="track-grid lower">
+      <div class="chart-box"><h3>48시간 안 전향 판별</h3><div id="turnAuc"></div></div>
+      <div class="chart-box"><h3>참피(2026) 전향 확률</h3><div class="chart-wrap track-wrap"><canvas id="champiChart"></canvas></div></div>
+    </div>
+  </div>
+</section>
 </main>
 <footer class="foot">
   <p>자체 모델 예측 · 공식 예보 아님 <span>—</span> 자료: <a href="https://www.ncei.noaa.gov/products/international-best-track-archive" target="_blank" rel="noopener">IBTrACS</a>, <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">気象庁</a>, <a href="https://www.metoc.navy.mil/jtwc/jtwc.html" target="_blank" rel="noopener">JTWC</a>, <a href="https://apihub.kma.go.kr/" target="_blank" rel="noopener">기상청 API허브</a>, <a href="https://registry.opendata.aws/noaa-gfs-bdp-pds/" target="_blank" rel="noopener">NOAA GFS</a>, <a href="https://psl.noaa.gov/data/gridded/data.ncep.reanalysis.html" target="_blank" rel="noopener">NCEP 재분석</a>, <a href="https://www.water.or.kr/kor/menu/sub.do?menuId=16_166_168_268" target="_blank" rel="noopener">재해연보</a></p>
@@ -180,6 +224,6 @@ window.KEYFIGS = (latest, live, u) => {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=20261109-1"></script>
+<script src="app.js?v=20261109-4"></script>
 </body>
 </html>
