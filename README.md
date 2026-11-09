@@ -98,7 +98,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 ## 웹사이트
 
-`docs/` 폴더가 GitHub Pages로 배포된다. PC·태블릿·휴대폰 화면을 모두 맞춘다. 한 페이지에 여섯 부분이 있다.
+`docs/` 폴더가 GitHub Pages로 배포된다. PC 화면 전용이다. 한 페이지에 여섯 부분이 있다.
 
 | 부분 | 내용 | 자료 |
 |---|---|---|
