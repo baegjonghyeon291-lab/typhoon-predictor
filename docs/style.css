@@ -262,3 +262,7 @@ input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 
 .auc td b { display: inline-block; min-width: 64px; font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--ink); }
 .auc .aucbar { display: inline-block; vertical-align: middle; width: calc(var(--w) * .7); height: 4px; margin-left: 10px; background: var(--muted); }
 .auc tr.best b { color: var(--acc); } .auc tr.best .aucbar { background: var(--acc); }
+
+/* 태풍이 없을 땐 큰 제목만(목록의 같은 문구는 숨김), 자료가 오래되면 큰 확률 숫자도 흐리게 */
+#now:has(.cv-quiet) .storm-list > li.empty { display: none; }
+#now:has(#nowPanel.stale) .cv-p { opacity: .55; }
