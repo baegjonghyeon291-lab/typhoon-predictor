@@ -59,6 +59,7 @@ th:first-child, td:first-child { text-align: left; }
 .cmp tbody th small { display: block; font-size: 10.5px; font-weight: 500; }
 .cmp-cap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; }
 .differ { display: block; font-style: normal; font-weight: 600; }
+.cmp td.differ { display: table-cell; }      /* 표 칸은 칸 그대로(블록이 되면 줄이 밀린다) */
 .chart-box { min-width: 0; }
 .chart-wrap { position: relative; }
 .chart-wrap canvas { width: 100% !important; height: 100% !important; }

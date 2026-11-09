@@ -51,7 +51,11 @@ section { scroll-margin-top: var(--top-h); }
 
 /* 기관별 비교표 */
 .panel { margin-top: 56px; }
-#asof, .cmp-cap, .cmp th small, .eta, .who, .src, .rel-table { display: none !important; }
+#asof, .cmp-cap, .cmp th small, .eta.why, .last-card .who, .src, .rel-table { display: none !important; }
+/* 도착 예상(확률 20% 이상일 때만 나옴)은 표 아래 한 줄로 */
+.eta.when { margin-top: 12px; font-size: 14.5px; color: var(--text); font-variant-numeric: tabular-nums; }
+.eta.when .who { display: inline; margin-right: 10px; font-weight: 700; color: var(--acc); }
+.eta.when.range { margin-top: 2px; color: var(--muted); font-size: 13.5px; }
 .storm-list > li { padding: 0 0 22px; }
 .storm-list > li + li { padding-top: 22px; border-top: 1px solid var(--hair2); }
 .storm-list > li.sel .s-head b { color: var(--acc); }
@@ -60,7 +64,10 @@ section { scroll-margin-top: var(--top-h); }
 .s-head b { font-family: var(--serif); font-size: 19px; font-weight: 700; color: var(--ink); }
 .lv { font-size: 13px; font-weight: 700; color: var(--c, var(--muted)); }
 .lv::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--c, var(--muted)); vertical-align: 1px; }
-.vit { display: none; }
+/* 풍속·기압: 첫 태풍은 위 큰 숫자에 이미 있으니 숨기고, 두 번째 태풍부터 카드에 보임 */
+.vit { margin: 8px 0 2px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.vit b { font-family: var(--serif); font-size: 18px; font-weight: 600; color: var(--ink); }
+#now:has(.cv-name:not(.cv-quiet)) .storm-list > li:first-child:not(.last-card) .vit { display: none; }
 .cmp { margin-top: 2px; font-size: 14px; }
 .cmp th, .cmp td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--hair); }
 .cmp thead th { padding-top: 12px; font-size: 13px; font-weight: 700; color: var(--muted); }

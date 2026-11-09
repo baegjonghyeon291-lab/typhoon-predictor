@@ -212,6 +212,16 @@ def test_site_lead_file_matches_reports():
     assert site["our_model_korea_full"]["median_warning_lead_h"] == a["model_warning_lead_full"]["korea"]["median_warning_lead_h"]
 
 
+def test_site_track_file_matches_reports():
+    """사이트 경로 예측 섹션(docs/data/track.json)이 reports/ 실험 결과와 같아야 한다(scripts/track_json.py)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("track_json", ROOT / "scripts" / "track_json.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    site = json.loads((ROOT / "docs" / "data" / "track.json").read_text(encoding="utf-8"))
+    assert site == mod.build()
+
+
 def test_near_storms_named_within_limit():
     df = pd.DataFrame({"SID": ["a", "a", "b", "c", "d"], "SEASON": [2025, 2025, 2025, 2025, 2014],
                        "NAME": ["LINGLING", "LINGLING", "UNNAMED", "NAKRI", "OLD"],

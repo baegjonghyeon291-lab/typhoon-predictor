@@ -46,7 +46,7 @@ def gfs():
                 h, n, cov, old, blend = map(int, m.groups())
                 out["all"].append({"h": h, "n": n, "gfs_share": cov / 100, "model": old, "blend": blend})
         elif part == "T":
-            m = re.match(r"(\S.*?)\s+(0\.\d+)\s+([\d.]+)%\s+([\d.]+)%", line)
+            m = re.match(r"(\S.*?)\s+([01]\.\d+)\s+([\d.]+)%\s+([\d.]+)%", line)
             if m:
                 out["turn"].append({"name": m.group(1).strip(), "auc": float(m.group(2)), "hit": round(float(m.group(3)) / 100, 4), "precision": round(float(m.group(4)) / 100, 4)})
         elif part == "C":
@@ -57,10 +57,21 @@ def gfs():
     return out
 
 
-def main():
+LEADS = [24, 48, 72, 96, 120]
+
+
+def build():
+    """리포트에서 사이트 자료를 만든다. 표의 줄이 하나라도 안 읽히면 멈춘다(조용히 빠지지 않게)."""
     g = gfs()
     data = {"base": base(), "gfs": g["all"], "turn": g["turn"], "champi": g["champi"]}
-    assert data["base"] and data["gfs"] and data["turn"] and data["champi"], "리포트 형식이 바뀌었는지 확인"
+    assert [r["h"] for r in data["base"]] == LEADS, "track_experiment.txt 위치 오차 표 형식 확인"
+    assert [r["h"] for r in data["gfs"]] == LEADS, "gfs_track_experiment.txt B 표 형식 확인"
+    assert len(data["turn"]) == 3 and data["champi"], "gfs_track_experiment.txt 전향·참피 표 형식 확인"
+    return data
+
+
+def main():
+    data = build()
     OUT.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"저장: {OUT} (기준 {len(data['base'])}줄, GFS {len(data['gfs'])}줄, 전향 {len(data['turn'])}줄, 참피 {len(data['champi'])}시점)")
 

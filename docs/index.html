@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700;900&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="core.css?v=20261109-1">
-<link rel="stylesheet" href="style.css?v=20261109-3">
+<link rel="stylesheet" href="core.css?v=20261109-2">
+<link rel="stylesheet" href="style.css?v=20261109-4">
 <script>
 /* D06 지면: 크림 종이 + 세리프 + 테라코타 하나 */
 window.THEME_C = { korea: "#c2462b", japan: "#5a534a", muted: "#8b8276", text: "#2b2722", ink: "#1d1a17", grid: "rgba(29,26,23,.07)", warn: "#8b8276" };
@@ -87,7 +87,9 @@ window.KEYFIGS = (latest, live, u) => {
   if (!box) return;
   if (!live.length) { box.innerHTML = `<h1 class="cv-name cv-quiet">활동 중인<br>태풍 없음</h1>`; return; }
   const big = t => t.replace(/(\d+)(%.*)$/, '$1<i>$2</i>');
-  const val = (s, c) => s[c].arrived ? `<b class="in">진입</b><em>${u.kst(s[c].arrived)}</em>` : `<b>${big(u.pctCard(s[c].p))}</b>`;
+  // 5일 안 확률이 20% 이상이면 모델의 도착 예상 시각을 숫자 아래에(카드의 '도착 예상' 줄과 같은 기준)
+  const eta = v => v.p >= .2 && v.eta ? `<em>${u.kst(v.eta)} 도착 예상 · ${u.leftText(v.eta)}</em>` : "";
+  const val = (s, c) => s[c].arrived ? `<b class="in">진입</b><em>${u.kst(s[c].arrived)}</em>` : `<b>${big(u.pctCard(s[c].p))}</b>${eta(s[c])}`;
   const [s, ...rest] = live, last = s.track[s.track.length - 1];
   box.innerHTML =
     `<p class="cv-lv">${u.lvName(last[3] ?? null, s.grade)}</p>`
@@ -224,6 +226,6 @@ window.KEYFIGS = (latest, live, u) => {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=20261109-4"></script>
+<script src="app.js?v=20261109-5"></script>
 </body>
 </html>

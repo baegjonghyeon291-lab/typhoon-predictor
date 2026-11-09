@@ -402,11 +402,11 @@ function renderNow(latest) {
 
   // 카드의 나라별 줄
   const whenLines = (v, s, label) => {
-    if (!v.range) return `<div class="eta"><span class="who">${label} 자체 예측</span> ${kst(v.eta)}쯤 · <span data-left="${v.eta}"></span></div>`;
+    if (!v.range) return `<div class="eta when"><span class="who">${label} 도착 예상</span> ${kst(v.eta)}쯤 · <span data-left="${v.eta}"></span></div>`;
     // eta 는 시 단위로 버리고 range 는 반올림이라 1시간 어긋날 수 있어 eta 를 감싸게 맞춘다
     const lo = [addHours(s.end, v.range[0]), v.eta].sort()[0], hi = [addHours(s.end, v.range[1]), v.eta].sort()[1];
-    return `<div class="eta"><span class="who">${label} 자체 예측</span> ${kst(v.eta)} · <span data-left="${v.eta}"></span></div>`
-      + `<div class="eta">범위 <span data-early="${lo}"></span> ~ ${kst(hi)}</div>`;
+    return `<div class="eta when"><span class="who">${label} 도착 예상</span> ${kst(v.eta)} · <span data-left="${v.eta}"></span></div>`
+      + `<div class="eta when range">범위 <span data-early="${lo}"></span> ~ ${kst(hi)}</div>`;
   };
   // 기관 예보 진로가 도시 200km 안에 들어오는지: 중심 진입 > 오차 범위 닿음 > 최단 거리
   const agencyCell = (fc, c, v) => {
@@ -431,7 +431,7 @@ function renderNow(latest) {
   const details = (s, c, label) => {
     const v = s[c];
     if (v.arrived) return "";
-    return (v.p >= .2 ? whenLines(v, s, label) : "") + (v.why?.length ? `<div class="eta"><span class="who">${label} 요인별 영향(그 요인이 없을 때와 비교)</span> ${whyText(v.why)}</div>` : "");
+    return (v.p >= .2 ? whenLines(v, s, label) : "") + (v.why?.length ? `<div class="eta why"><span class="who">${label} 요인별 영향(그 요인이 없을 때와 비교)</span> ${whyText(v.why)}</div>` : "");
   };
 
   // data_until 은 마지막 관측 시각이라 태풍이 없으면 멈춰 있다. 신선도는 갱신 시각(generated)으로 따진다
@@ -523,7 +523,7 @@ function renderNow(latest) {
     };
     ctl.addTo(map);
   }
-  if (window.KEYFIGS) window.KEYFIGS(latest, liveList, { stormName, stormFull, pctCard, kst, lvName, lvIndex, LV });
+  if (window.KEYFIGS) window.KEYFIGS(latest, liveList, { stormName, stormFull, pctCard, kst, lvName, lvIndex, LV, leftText });
   if (!liveN) list.innerHTML = `<li class="empty" style="cursor:default;animation:none">활동 중인 태풍 없음</li>`;
   if (goneN) {
     let goneLayers = null;
@@ -771,13 +771,23 @@ function renderHistory(history, damage, review = {}) {
     $("histAll")?.setAttribute("aria-pressed", on);
     $("history").classList.toggle("all-on", on);
     if (on) { stop(); layer.remove(); cmpLayer.remove(); allLayer.addTo(map); drawAll(); }
-    else { allLayer.remove(); layer.addTo(map); cmpLayer.addTo(map); if (!quiet && cur) map.flyToBounds(cur.track.map(t => [t[1], t[2]]), { padding: [40, 40], duration: .8 }); }
+    else {
+      allLayer.remove(); layer.addTo(map); cmpLayer.addTo(map);
+      if (!cur && !quiet && shown.length) return load(shown[0].i);      // 아직 고른 태풍이 없으면 목록 첫 태풍
+      if (!quiet && cur) map.flyToBounds(cur.track.map(t => [t[1], t[2]]), { padding: [40, 40], duration: .8 });
+    }
   }
 
   function load(i) {
     stop();
     if (allOn) setAll(false, true);
     cur = history[i];
+    // 지금 보는 태풍은 겹쳐 볼 목록에서 고를 수 없게(골라 둔 게 이 태풍이면 해제)
+    const cs = $("histCmp");
+    if (cs) {
+      [...cs.options].forEach(o => { o.disabled = o.value !== "" && +o.value === i; });
+      if (cmpI === i) { cmpI = null; cs.value = ""; }
+    }
     tr && tr.cancel();
     layer.clearLayers();
     tr = drawTrack(layer, cur.track, { weight: 4, cls: "tc-hist", opacityOf: k => k < +scrub.value ? 1 : .25, done: () => declutter(map) });
@@ -833,12 +843,21 @@ function renderHistory(history, damage, review = {}) {
   // 목록: 연도·단계로 거르고 최신·피해·강도 순으로 정렬
   const f = { year: "", lv: "", sort: "new", q: "" };
   // 주소 #history/2026-참피 로 바로 열기
-  const fromHash = () => { const m = decodeURIComponent(location.hash).match(/^#history\/(.+)$/); return m ? history.findIndex(s => slug(s) === m[1] || stormName(s) === m[1]) : -1; };
+  const fromHash = () => {
+    let h;
+    try { h = decodeURIComponent(location.hash); } catch { return -1; }      // 잘린 공유 링크(%E0 등)는 무시
+    const m = h.match(/^#history\/(.+)$/);
+    return m ? history.findIndex(s => slug(s) === m[1] || stormName(s) === m[1]) : -1;
+  };
   let want = fromHash();
   // 위쪽 섹션이 늦게 채워지며 자리가 밀리므로 그린 뒤에 한 번 더 맞춘다
   // (브라우저가 없는 앵커를 찾다가 첫 화면으로 되돌리므로 페이지 load 뒤에도 맞춘다)
+  // 사용자가 직접 스크롤하기 시작하면 더는 끌어오지 않는다
   const goHist = () => {
-    const go = () => $("history").scrollIntoView({ behavior: "instant" });
+    let moved = false;
+    const stopIt = () => { moved = true; };
+    ["wheel", "touchstart", "keydown", "mousedown"].forEach(ev => addEventListener(ev, stopIt, { once: true, passive: true }));
+    const go = () => { if (!moved) $("history").scrollIntoView({ behavior: "instant" }); };
     go(); [300, 1200].forEach(ms => setTimeout(go, ms));
     if (document.readyState !== "complete") addEventListener("load", () => setTimeout(go, 50), { once: true });
   };
@@ -881,7 +900,9 @@ function renderHistory(history, damage, review = {}) {
   };
   group("histLv", "lv", [["", "전체"], ...[5, 4, 3, 2, 1, ...(items.some(r => r.lv === 0) ? [0] : [])].map(n => [String(n), lvLabel(n)])]);
   group("histSort", "sort", [["new", "최신순"], ["dmg", "피해 큰 순"], ["peak", "강한 순"]]);
-  $("histQ")?.addEventListener("input", e => { f.q = e.target.value; refresh(); });
+  // 검색은 입력이 잠깐 멈췄을 때 한 번만 거른다(전체 경로가 켜져 있으면 매 글자마다 다시 그리지 않게)
+  const search = debounce(() => refresh(), 250);
+  $("histQ")?.addEventListener("input", e => { f.q = e.target.value; search(); });
   $("histAll")?.addEventListener("click", () => setAll(!allOn));
   const cmpSel = $("histCmp");
   if (cmpSel) {
@@ -972,13 +993,11 @@ function renderModel(stats) {
     const labH = { id: "labH", afterDatasetsDraw(c) { const ctx = c.ctx; ctx.save(); ctx.font = `700 14px ${Chart.defaults.font.family}`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = C.korea; c.getDatasetMeta(0).data.forEach((b, i) => ctx.fillText(`${Math.round(c.data.datasets[0].data[i])}%`, b.x + 8, b.y)); ctx.restore(); } };
     charts.push(new Chart($("coverChart"), {
       type: "bar", plugins: [target, labH],
-      data: { labels: ["경로 모델", "환경 모델"], datasets: [{ label: "적중", data: [path.arrival_range80_coverage * 100, env.arrival_range80_coverage * 100], backgroundColor: C.korea, fmt: v => `${Math.round(v)}%`, barThickness: 26 }] },
+      data: { labels: ["경로 모델", "환경 모델"], datasets: [{ label: "적중", data: [path.arrival_range80_coverage * 100, env.arrival_range80_coverage * 100], backgroundColor: C.korea, barThickness: 26 }] },
       options: { indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { top: 24, right: 40 } },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${Math.round(c.parsed.x)}%` } } },
         scales: { x: { min: 50, max: 100, ticks: { callback: v => v + "%", stepSize: 10 } }, y: { grid: { display: false } } } },
     }));
-    // 가로 막대는 값 라벨을 막대 끝에
-    charts[1].data.datasets[0].fmt = v => `${Math.round(v)}%`;
   };
   const tabs = $("modelTabs");
   tabs.innerHTML = [["korea", "한국"], ["japan", "일본"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === country}">${t}</button>`).join("");
@@ -990,22 +1009,23 @@ function renderModel(stats) {
 function renderTrack(t) {
   const hrs = t.base.map(r => `${r.h}h`);
   const line = (label, data, color, o = {}) => ({ label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 3.5, pointHoverRadius: 5, tension: 0, ...o });
-  const opts = (y, extra = {}) => ({ maintainAspectRatio: false, animation: false, layout: { padding: { right: 96, top: 8 } }, interaction: { mode: "index", intersect: false },
-    scales: { y, x: { grid: { display: false } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.formattedValue}${y.unit || ""}` } } }, ...extra });
-  const km = { beginAtZero: true, unit: "km", ticks: { callback: v => `${v.toLocaleString()}km`, maxTicksLimit: 5 } };
+  // 세 그래프 공통 설정: y축과 단위, x축 눈금만 다르다
+  const opts = (y, unit, xTicks = {}) => ({ maintainAspectRatio: false, animation: false, layout: { padding: { right: 96, top: 8 } }, interaction: { mode: "index", intersect: false },
+    scales: { y, x: { grid: { display: false }, ticks: xTicks } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.formattedValue}${unit}` } } } });
+  const km = { beginAtZero: true, ticks: { callback: v => `${v.toLocaleString()}km`, maxTicksLimit: 5 } };
   seen($("track"), () => {
     if (!window.Chart) return;
     new Chart($("trackChart"), { type: "line", plugins: [endLabels], data: { labels: hrs, datasets: [
       line("단순 연장", t.base.map(r => r.extrap), C.muted, { borderDash: [5, 4] }),
-      line("자체 모델", t.base.map(r => r.model), C.korea, { borderWidth: 2.6 })] }, options: opts(km) });
+      line("자체 모델", t.base.map(r => r.model), C.korea, { borderWidth: 2.6 })] }, options: opts(km, "km") });
     new Chart($("gfsChart"), { type: "line", plugins: [endLabels], data: { labels: t.gfs.map(r => `${r.h}h`), datasets: [
       line("기존 모델", t.gfs.map(r => r.model), C.muted, { borderDash: [5, 4] }),
-      line("GFS 결합", t.gfs.map(r => r.blend), C.korea, { borderWidth: 2.6 })] }, options: opts(km) });
+      line("GFS 결합", t.gfs.map(r => r.blend), C.korea, { borderWidth: 2.6 })] }, options: opts(km, "km") });
     const ref = { id: "ref", afterDatasetsDraw(c) { const { ctx, chartArea: ar, scales: { y } } = c, py = y.getPixelForValue(50); ctx.save(); ctx.strokeStyle = C.grid.replace(/[\d.]+\)$/, ".35)"); ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(ar.left, py); ctx.lineTo(ar.right, py); ctx.stroke(); ctx.restore(); } };
     new Chart($("champiChart"), { type: "line", plugins: [ref, endLabels], data: { labels: t.champi.map(r => r.kst), datasets: [
       line("기존 분류", t.champi.map(r => r.clf * 100), C.muted, { borderDash: [5, 4], pointRadius: 0 }),
       line("GFS 결합", t.champi.map(r => r.blend * 100), C.korea, { borderWidth: 2.6, pointRadius: 0 })] },
-      options: opts({ min: 0, max: 100, unit: "%", ticks: { callback: v => v + "%", stepSize: 50 } }, { scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 50 } }, x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } } } }) });
+      options: opts({ min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 50 } }, "%", { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }) });
   }, .05);
   $("turnAuc").innerHTML = `<table class="auc"><thead><tr><th>방법</th><th>AUC</th><th>맞힘</th><th>예측 중 실제</th></tr></thead><tbody>`
     + t.turn.map((r, i) => `<tr${i === t.turn.length - 1 ? ' class="best"' : ""}><td>${r.name}</td><td><b>${r.auc.toFixed(3)}</b><i class="aucbar" style="--w:${(r.auc - .5) / .5 * 100}%"></i></td><td>${pct(r.hit)}</td><td>${pct(r.precision)}</td></tr>`).join("")
@@ -1020,7 +1040,7 @@ document.addEventListener("click", e => { if (e.target.classList && e.target.cla
 function unavailable(id) {
   const w = document.querySelector(`#${id} .wrap`);
   if (!w) return;
-  [...w.children].filter(c => !c.classList.contains("sec-head")).forEach(c => c.remove());
+  [...w.children].filter(c => !c.matches(".sec-head, .sec-title")).forEach(c => c.remove());      // 섹션 제목은 남긴다
   w.insertAdjacentHTML("beforeend", `<p class="empty">${FAIL_HTML}</p>`);
 }
 function guard(id, data, fn) {
