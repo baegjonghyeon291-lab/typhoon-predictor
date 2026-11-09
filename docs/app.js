@@ -1,4 +1,4 @@
-const C = { korea: "#ff7a6b", japan: "#63aeff", kmap: "#c8283c", jmap: "#1860c0", muted: "#9bb8cd", text: "#d3e6f3", ink: "#7fc6e0", grid: "rgba(155,200,230,.14)", warn: "#f6b94e" };
+const C = Object.assign({ korea: "#ff7a6b", japan: "#63aeff", kmap: "#c8283c", jmap: "#1860c0", muted: "#9bb8cd", text: "#d3e6f3", ink: "#7fc6e0", grid: "rgba(155,200,230,.14)", warn: "#f6b94e" }, window.THEME_C || {});
 const KOREA_CITIES = [[37.57, 126.98], [35.18, 129.08], [35.16, 126.85], [33.50, 126.53], [37.75, 128.90], [36.35, 127.38]];
 const CITY_NAMES = ["서울", "부산", "광주", "제주", "강릉", "대전"];
 const JAPAN_CITIES = [[33.59, 130.40], [31.60, 130.56], [34.69, 135.50], [35.68, 139.69], [38.27, 140.87], [43.06, 141.35], [26.21, 127.68], [33.56, 133.53], [37.90, 139.00]];
@@ -26,7 +26,8 @@ if (window.Chart) {
   Chart.defaults.color = C.muted;
   Chart.defaults.font.family = "'Pretendard Variable', Pretendard, system-ui, sans-serif";
   Chart.defaults.borderColor = C.grid;
-  Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: "rgba(3,12,20,.97)", borderColor: "#35607f", borderWidth: 1, titleColor: "#fff", bodyColor: "#fff", padding: 10, cornerRadius: 3, boxPadding: 4 });
+  Object.assign(Chart.defaults.plugins.tooltip, { backgroundColor: "rgba(3,12,20,.97)", borderColor: "#35607f", borderWidth: 1, titleColor: "#fff", bodyColor: "#fff", padding: 10, cornerRadius: 3, boxPadding: 4 }, window.THEME_TIP || {});
+  if (window.THEME_FONT) Chart.defaults.font.family = window.THEME_FONT;
 }
 
 const getJSON = p => fetch(p, { cache: "no-cache" }).then(r => { if (!r.ok) throw new Error(p); return r.json(); });
@@ -341,7 +342,7 @@ function renderNow(latest) {
   list.innerHTML = "";
   const liveBounds = [];
   const wide = () => window.innerWidth > 860;
-  const pad = () => ({ paddingTopLeft: [wide() ? 420 : 64, 44], paddingBottomRight: [wide() ? 120 : 64, 44], maxZoom: 5 });
+  const pad = () => ({ paddingTopLeft: [wide() ? (window.PAD_L ?? 420) : 64, 44], paddingBottomRight: [wide() ? 120 : 64, 44], maxZoom: 5 });
   const cards = [];
   let selected = null, view = null, allView = null;
 
@@ -441,6 +442,7 @@ function renderNow(latest) {
   const quiet = longGap && latest.feed_ok === true && !latest.storms.some(s => s.end === latest.data_until && usActive.includes(s.name.toUpperCase()));
   const noFeed = longGap && !quiet;
   let liveN = 0, goneN = 0;
+  const liveList = [];
   const goneDraws = [], goneIdx = new Set();
   latest.storms.forEach((s, n) => {
     const live = s.end === latest.data_until && !quiet;
@@ -486,7 +488,7 @@ function renderNow(latest) {
         + (kt != null || hpa != null ? `<div class="vit">${kt != null ? `풍속 <b>${kt}</b>kt(${kn2ms(kt)}m/s)${s.wind_usa ? " 미국 환산" : ""}` : ""}${kt != null && hpa != null ? " · " : ""}${hpa != null ? `기압 <b>${hpa}</b>hPa` : ""}</div>` : "")
         + compareTable(s) + details(s, "korea", "한국") + details(s, "japan", "일본")
         + `${s.env ? "" : '<div class="src weak">상공 자료 없음</div>'}`;
-      list.appendChild(li); liveN++;
+      list.appendChild(li); liveN++; liveList.push(s);
     } else {
       // 소멸한 태풍은 '최근 소멸'을 펼쳤을 때만 지도에 그린다(활동 중인 것처럼 보이지 않게)
       goneDraws.push(Object.assign(() => {
@@ -503,6 +505,7 @@ function renderNow(latest) {
     }
     bind(li, n, s, live);
   });
+  if (window.KEYFIGS) window.KEYFIGS(latest, liveList, { stormName, stormFull, pctCard, kst, lvName, lvIndex, LV });
   if (!liveN) list.innerHTML = `<li class="empty" style="cursor:default;animation:none">활동 중인 태풍 없음</li>`;
   if (goneN) {
     let goneLayers = null;
@@ -585,6 +588,8 @@ function renderCompare(stats, kma) {
   if (kmaF) sets.unshift(line("기상청", kmaF, C.warn, { borderDash: [2, 5], pointStyle: "rectRot", pointRadius: 4 }));
   seen($("leadChart").closest(".chart-box"), () => {
     if (!window.Chart) return;
+    const cfg = window.LEAD_CHART ? window.LEAD_CHART({ sets, leads, C }) : null;
+    if (cfg) { new Chart($("leadChart"), cfg); return; }
     const ch = new Chart($("leadChart"), {
       type: "line", plugins: [wipePlugin, endLabels],
       data: { labels: leads.map(h => `${h}시간 전`), datasets: sets },
@@ -650,7 +655,7 @@ function renderHistory(history, damage, review = {}) {
         ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash(dash);
         ctx.beginPath(); ctx.moveTo(px, ar.top); ctx.lineTo(px, ar.bottom); ctx.stroke(); ctx.restore();
       };
-      draw(0, "rgba(255,122,107,.75)", [4, 4]);
+      draw(0, window.THEME_REFLINE || "rgba(255,122,107,.75)", [4, 4]);
       if (cur) draw(hoursTo(cur.track[+scrub.value]), C.ink, []);
       const y = c.scales.y.getPixelForValue(WARN_P * 100);       // 도달 예측 기준선
       ctx.save(); ctx.strokeStyle = C.warn; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
@@ -722,8 +727,9 @@ function renderHistory(history, damage, review = {}) {
       datasets: [
         { label: "한국", data: pts(5), borderColor: C.korea, backgroundColor: C.korea + "1f", fill: true },
         { label: "일본", data: pts(6), borderColor: C.japan, backgroundColor: "transparent" },
-      ].map(d => ({ ...d, tension: .3, pointRadius: 0, borderWidth: 2.4 })),
+      ].map(d => ({ ...d, tension: window.THEME_TENSION ?? .3, pointRadius: 0, borderWidth: 2.4 })),
     };
+    if (window.HIST_DATA) window.HIST_DATA(data, C);
     if (chart) { chart.data = data; chart.options.scales.x.title.text = `한국 ${refName()} 기준`; chart.update(); }
     else if (window.Chart) chart = new Chart($("histChart"), {
       type: "line", data, plugins: [cursorLine, endLabels],

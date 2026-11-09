@@ -1,0 +1,89 @@
+/* 공통: app.js 가 만드는 지도·표식·표 부품. 색은 각 디자인의 변수로 받는다. */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+a { color: inherit; }
+h1, h2, h3, p, ol, ul { margin: 0; padding: 0; }
+ol, ul { list-style: none; }
+body { margin: 0; -webkit-font-smoothing: antialiased; word-break: keep-all; }
+
+.map { position: relative; z-index: 0; overflow: hidden; }
+.leaflet-container { font-family: inherit; }
+.leaflet-bar { box-shadow: none !important; border-radius: 0 !important; }
+.leaflet-bar a { border-radius: 0 !important; }
+.leaflet-control-attribution { font-size: 10px; }
+.map-btns { display: grid; gap: 6px; }
+.map-all { padding: 6px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.map-all.back { display: none; }
+.map-empty { position: relative; z-index: 1; padding: 24px; }
+
+.tc-icon { background: none; border: 0; }
+.tc-box { position: relative; width: 100%; height: 100%; }
+.tc-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.tc-pulse { display: none; }
+.tc-label { position: absolute; top: calc(100% + 1px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 2px 7px; background: #fff; border: 1px solid #9a9a96; color: #111; font-size: 12px; font-weight: 800; line-height: 1.25; white-space: nowrap; pointer-events: none; }
+.tc-label small { font-size: 11px; font-weight: 600; color: #555; font-variant-numeric: tabular-nums; }
+.tc-end { width: 100%; height: 100%; }
+.tc-end i { position: absolute; inset: 25%; border-radius: 50%; background: #fff; border: 2.5px solid currentColor; }
+.tc-end .tc-label { top: 100%; padding: 1px 6px; font-size: 11px; font-weight: 700; color: #555; }
+.tc-date, .tc-fc, .tc-city { background: none; border: 0; pointer-events: none; }
+.tc-date span { position: absolute; left: 0; bottom: 0; font-size: 11px; font-weight: 700; color: #3c4046; font-variant-numeric: tabular-nums; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; white-space: nowrap; }
+.tc-fc span { position: absolute; left: 0; top: 0; transform: translate(8px, -50%); padding: 1px 5px; background: #fff; border: 1px solid currentColor; font-size: 11px; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tc-city i { position: absolute; left: 0; top: 0; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #c8283c; border: 1px solid #fff; }
+.tc-city span { position: absolute; left: 6px; top: -7px; font-size: 11px; font-weight: 700; color: #8a1d2b; white-space: nowrap; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; }
+.tc-city.jp i { background: #1860c0; }
+.tc-city.jp span { color: #154a93; }
+.tc-p { transition: opacity .3s; }
+.map.focus .tc-p:not(.hot) { opacity: .14 !important; }
+.map.focus .tc-gone:not(.hot) { opacity: .1 !important; }
+.tc-gone { opacity: .6; }
+.map.focus .tc-gone.hot { opacity: 1; }
+.leaflet-tcCone-pane { opacity: .18; }
+.tc-legend { padding: 7px 10px; background: rgba(255,255,255,.96); border: 1px solid #9a9a96; font-size: 11.5px; line-height: 1.55; color: #222; font-weight: 600; }
+.tc-legend summary { cursor: pointer; font-weight: 700; }
+.tc-legend[open] summary { margin-bottom: 3px; }
+.tc-legend div { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.tc-legend i { width: 16px; height: 4px; flex-shrink: 0; }
+.tc-legend .sep { margin-top: 5px; padding-top: 5px; border-top: 1px solid #ddd; }
+.tc-legend i.lg-line { height: 0; border-top: 3px dotted #1860c0; }
+.tc-legend i.lg-cone { height: 10px; background: rgba(24,96,192,.22); }
+.tc-legend i.lg-line.us { border-top: 3px dashed #0b8a5f; }
+.tc-legend i.lg-line.kr { border-top: 3px dashed #8a5a00; }
+.tc-legend i.lg-line.own { border-top: 3px solid #c8187f; }
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+.cmp { table-layout: fixed; }
+.cmp th, .cmp td { white-space: normal; text-align: left; vertical-align: top; line-height: 1.35; }
+.cmp thead th:first-child, .cmp tbody th { width: 76px; }
+.cmp tbody th small { display: block; font-size: 10.5px; font-weight: 500; }
+.cmp-cap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; }
+.differ { display: block; font-style: normal; font-weight: 600; }
+.chart-box { min-width: 0; }
+.chart-wrap { position: relative; }
+.chart-wrap canvas { width: 100% !important; height: 100% !important; }
+.rel-table summary { cursor: pointer; }
+.rel-table > div { max-height: 340px; overflow: auto; }
+.rel-table th, .rel-table td { padding: 3px 12px 3px 0; text-align: right; }
+.rel-table th:first-child, .rel-table td:first-child { text-align: left; }
+.bar { display: block; overflow: hidden; }
+.bar u { display: block; height: 100%; width: 100%; transform: scaleX(0); transform-origin: left; transition: transform .8s ease; }
+.gone-box summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
+.gone-box summary::-webkit-details-marker { display: none; }
+.gone-box summary::before { content: "+"; display: inline-block; width: 12px; font-weight: 700; }
+.gone-box[open] summary::before { content: "−"; }
+.gone-list li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.gone-list li em { flex-basis: 100%; font-style: normal; font-size: 12px; }
+.storm-list > li { cursor: pointer; outline: none; }
+.storm-list > li.last-card { cursor: default; }
+.s-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.eta, .vit { font-variant-numeric: tabular-nums; }
+.who { display: block; }
+.text-btn { padding: 0; background: none; border: 0; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+#toMap { display: none; }
+.stale .cmp td, .stale .eta { opacity: .55; }
+.h-why { display: block; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; cursor: pointer; margin: 0; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+@media (max-width: 860px) { .map-all.back, #toMap { display: inline-block; } }
+@media (max-width: 520px) { .tc-label small { display: none; } .tc-date { display: none; } .map.focus .tc-date.hot { display: block; } }

@@ -7,8 +7,97 @@
 <meta name="description" content="서태평양 태풍의 한국·일본 도달 확률과 시기를 머신러닝으로 예측하고 기관 예보와 비교합니다. 공식 예보가 아닙니다.">
 <script>document.documentElement.classList.add("js")</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700;900&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="style.css?v=20261104-4">
+<link rel="stylesheet" href="core.css?v=20261109-1">
+<link rel="stylesheet" href="style.css?v=20261109-1">
+<script>
+/* D06 지면: 크림 종이 + 세리프 + 테라코타 하나 */
+window.THEME_C = { korea: "#c2462b", japan: "#5a534a", muted: "#8b8276", text: "#2b2722", ink: "#1d1a17", grid: "rgba(29,26,23,.07)", warn: "#8b8276" };
+window.THEME_TIP = { backgroundColor: "#1d1a17", borderColor: "#1d1a17", borderWidth: 0, titleColor: "#f4efe6", bodyColor: "#f4efe6", cornerRadius: 0, padding: 10 };
+window.THEME_TENSION = 0;
+window.THEME_REFLINE = "rgba(29,26,23,.45)";
+window.PAD_L = 48;
+const SERIF = "'Noto Serif KR', serif";
+
+// 지난 태풍: 가는 선 두 줄, 면 없음. 일본은 짙은 회갈색 점선
+window.HIST_DATA = (data, C) => {
+  data.datasets.forEach(d => { d.borderWidth = 1.5; d.fill = false; d.backgroundColor = "transparent"; d.pointHoverRadius = 4; d.pointHoverBackgroundColor = d.borderColor; });
+  data.datasets[1].borderDash = [4, 3];
+  data.datasets[1].borderWidth = 1.25;
+};
+
+// 비교: 시점별 롤리팝(가는 줄기 + 원), 값은 원 위에 세리프로 크게
+window.LEAD_CHART = ({ sets, leads, C }) => {
+  const self = sets.find(d => d.label === "자체 모델"), kma = sets.find(d => d.label === "기상청");
+  const n = leads.length, at = i => n - 1 - i;                    // 5일 전 → 1일 전 순으로 왼쪽에서 오른쪽
+  const off = kma ? .17 : 0;
+  const ds = [];
+  if (kma) ds.push({ label: "기상청", data: kma.data.map((v, i) => ({ x: at(i) - off, y: v })), pointRadius: 6, pointHoverRadius: 7, pointBackgroundColor: "#f4efe6", pointBorderColor: "#8b8276", pointBorderWidth: 1.5, borderColor: "#8b8276", showLine: false, _c: "#8b8276", _w: 400 });
+  ds.push({ label: "자체 모델", data: self.data.map((v, i) => ({ x: at(i) + off, y: v })), pointRadius: 7, pointHoverRadius: 8, pointBackgroundColor: C.korea, pointBorderColor: C.korea, borderColor: C.korea, showLine: false, _c: C.korea, _w: 700 });
+  const lolli = {
+    id: "lolli",
+    beforeDatasetsDraw(c) {
+      const ctx = c.ctx, y0 = c.scales.y.getPixelForValue(0);
+      ctx.save(); ctx.lineWidth = 1.25;
+      c.data.datasets.forEach((d, di) => c.getDatasetMeta(di).data.forEach(p => { ctx.strokeStyle = d._c; ctx.beginPath(); ctx.moveTo(p.x, y0); ctx.lineTo(p.x, p.y); ctx.stroke(); }));
+      ctx.restore();
+    },
+    afterDatasetsDraw(c) {
+      const ctx = c.ctx, a = c.chartArea;
+      ctx.save(); ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      c.data.datasets.forEach((d, di) => c.getDatasetMeta(di).data.forEach((p, i) => {
+        ctx.fillStyle = d._c;
+        ctx.font = `${d._w} ${d._w === 700 ? 22 : 16}px ${SERIF}`;
+        ctx.fillText(Math.round(d.data[i].y) + "%", p.x, p.y - 12);
+      }));
+      // 계열 이름: 맨 오른쪽 원 옆에 직접
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      const tags = c.data.datasets.map((d, di) => ({ d, y: c.getDatasetMeta(di).data[0].y })).sort((p, q) => p.y - q.y);   // data[0] = 1일 전(맨 오른쪽)
+      for (let k = 1; k < tags.length; k++) if (tags[k].y - tags[k - 1].y < 20) tags[k].y = tags[k - 1].y + 20;
+      tags.forEach(({ d, y }) => {
+        ctx.fillStyle = d._c; ctx.font = `${d._w === 700 ? 700 : 500} 15px 'Pretendard Variable', Pretendard, sans-serif`;
+        ctx.fillText(d.label, a.right + 14, Math.min(y, a.bottom));
+      });
+      ctx.restore();
+    },
+  };
+  return {
+    type: "scatter", data: { datasets: ds }, plugins: [lolli],
+    options: {
+      maintainAspectRatio: false, animation: false, layout: { padding: { top: 34, right: 84 } },
+      interaction: { mode: "nearest", intersect: false },
+      scales: {
+        x: { type: "linear", min: -.6, max: n - .4, grid: { display: false }, border: { color: "#1d1a17" },
+          afterBuildTicks: ax => { ax.ticks = leads.map((_, i) => ({ value: i })); },
+          ticks: { callback: v => `${leads[n - 1 - v] / 24}일 전`, color: "#2b2722", font: { size: 14, weight: 600 }, padding: 10 } },
+        y: { min: 0, max: 100, border: { display: false }, grid: { color: "rgba(29,26,23,.08)" },
+          afterBuildTicks: ax => { ax.ticks = [0, 50, 100].map(value => ({ value })); },
+          ticks: { callback: v => v + "%", font: { size: 12 }, padding: 8 } },
+      },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => `${leads[n - 1 - Math.round(i[0].parsed.x)] / 24}일(${leads[n - 1 - Math.round(i[0].parsed.x)]}시간) 전`, label: c => `${c.dataset.label} ${Math.round(c.parsed.y)}%` } } },
+    },
+  };
+};
+
+// 표지: 첫 활동 태풍 이름과 확률을 크게, 나머지는 아래 줄로
+window.KEYFIGS = (latest, live, u) => {
+  const box = document.getElementById("keyfigs");
+  if (!box) return;
+  if (!live.length) { box.innerHTML = `<h1 class="cv-name cv-quiet">활동 중인<br>태풍 없음</h1>`; return; }
+  const big = t => t.replace(/(\d+)(%.*)$/, '$1<i>$2</i>');
+  const val = (s, c) => s[c].arrived ? `<b class="in">진입</b><em>${u.kst(s[c].arrived)}</em>` : `<b>${big(u.pctCard(s[c].p))}</b>`;
+  const [s, ...rest] = live, last = s.track[s.track.length - 1];
+  box.innerHTML =
+    `<p class="cv-lv">${u.lvName(last[3] ?? null, s.grade)}</p>`
+    + `<h1 class="cv-name" style="--n:${Math.max(2, u.stormName(s).length)}">${u.stormName(s)}</h1>`
+    + `<p class="cv-en">${s.name}</p>`
+    + `<p class="cv-vit">${last[3] != null ? `<span><b>${last[3]}</b>kt</span>` : ""}${last[4] != null ? `<span><b>${last[4]}</b>hPa</span>` : ""}</p>`
+    + `<div class="cv-p"><div class="korea"><span>한국</span>${val(s, "korea")}</div><div class="japan"><span>일본</span>${val(s, "japan")}</div></div>`
+    + (rest.length ? `<ul class="cv-more">${rest.map(r => `<li><b>${u.stormName(r)}</b><span>한국 ${r.korea.arrived ? "진입" : u.pctCard(r.korea.p)}</span><span>일본 ${r.japan.arrived ? "진입" : u.pctCard(r.japan.p)}</span></li>`).join("")}</ul>` : "");
+};
+</script>
 </head>
 <body>
 <header class="top">
@@ -21,47 +110,48 @@
 </header>
 
 <main>
-<section id="now" class="stage">
-  <div id="nowMap" class="map" role="region" aria-label="현재 태풍 지도"></div>
-  <aside class="panel" id="nowPanel">
-    <div class="panel-top">
-      <h1>현재 태풍</h1>
+<section id="now">
+  <div class="cover">
+    <div id="keyfigs" class="keyfigs"></div>
+    <aside class="panel" id="nowPanel">
       <span id="asof"></span>
       <button type="button" id="toMap" class="text-btn">지도 보기</button>
-    </div>
-    <p id="staleNote" class="stale-note" role="status" hidden></p>
-    <ol id="nowList" class="storm-list"><li class="empty" style="cursor:default;animation:none">불러오는 중…</li></ol>
-    <details id="goneBox" class="gone-box" hidden>
-      <summary>최근 소멸 <span id="goneN"></span></summary>
-      <ol id="goneList" class="gone-list"></ol>
-    </details>
-  </aside>
+      <p id="staleNote" class="stale-note" role="status" hidden></p>
+      <ol id="nowList" class="storm-list"><li class="empty">불러오는 중…</li></ol>
+      <details id="goneBox" class="gone-box" hidden>
+        <summary>최근 소멸 <span id="goneN"></span></summary>
+        <ol id="goneList" class="gone-list"></ol>
+      </details>
+    </aside>
+  </div>
+  <figure class="cover-map">
+    <div id="nowMap" class="map" role="region" aria-label="현재 태풍 지도"></div>
+  </figure>
 </section>
 
 <section id="history">
   <div class="wrap">
-    <div class="sec-head"><h2>지난 태풍</h2></div>
-    <div class="hist-filter">
-      <select id="histYear" aria-label="연도"></select>
-      <div id="histLv" class="seg" role="group" aria-label="단계"></div>
-      <div id="histSort" class="seg" role="group" aria-label="정렬"></div>
-    </div>
-    <div class="hist-layout">
-      <ol id="histList" class="hist-list"></ol>
-      <div class="hist-main">
+    <h2 class="sec-title">지난 태풍</h2>
+    <div class="spread">
+      <div class="toc">
+        <div class="hist-filter">
+          <select id="histYear" aria-label="연도"></select>
+          <div id="histLv" class="seg" role="group" aria-label="단계"></div>
+          <div id="histSort" class="seg" role="group" aria-label="정렬"></div>
+        </div>
+        <ol id="histList" class="hist-list"></ol>
+      </div>
+      <div class="page">
+        <p id="histSummary" class="hist-summary"></p>
+        <div id="histMap" class="map" role="region" aria-label="지난 태풍 경로 지도"></div>
         <div class="hist-bar">
           <button id="play" type="button" aria-label="재생">▶</button>
           <input id="scrub" type="range" min="0" max="0" value="0" aria-label="시각">
           <span id="scrubTime" aria-live="off"></span>
         </div>
-        <p id="histSummary" class="hist-summary"></p>
-        <div class="hist-grid">
-          <div id="histMap" class="map" role="region" aria-label="지난 태풍 경로 지도"></div>
-          <div class="chart-box">
-            <h3>5일 내 도달 확률</h3>
-            <div class="chart-wrap"><canvas id="histChart"></canvas></div>
-            <details class="rel-table"><summary>표로 보기</summary><div id="histTable"></div></details>
-          </div>
+        <div class="chart-box">
+          <div class="chart-wrap hist-wrap"><canvas id="histChart"></canvas></div>
+          <details class="rel-table"><summary>표로 보기</summary><div id="histTable"></div></details>
         </div>
       </div>
     </div>
@@ -70,14 +160,13 @@
 
 <section id="compare">
   <div class="wrap">
-    <div class="sec-head"><h2>자체 모델 vs 기상청</h2></div>
-    <div class="article cmp-b">
-      <div class="chart-box tall">
-        <h3>한국 200km 진입 전 도달 예측 비율</h3>
-        <div class="chart-wrap"><canvas id="leadChart"></canvas></div>
+    <h2 class="sec-title">자체 모델과 기상청</h2>
+    <div class="cmp-grid">
+      <div class="chart-box lead-box">
+        <div class="chart-wrap lead-wrap"><canvas id="leadChart"></canvas></div>
         <details class="rel-table"><summary>표로 보기</summary><div id="leadTable"></div></details>
       </div>
-      <div class="side-col">
+      <div class="cmp-side">
         <div id="metrics"></div>
         <div id="factors"></div>
       </div>
@@ -86,12 +175,11 @@
 </section>
 </main>
 <footer class="foot">
-  <p><b>자체 모델 예측이며 공식 예보가 아닙니다.</b> 공식 예보: <a href="https://www.weather.go.kr/w/typhoon/report.do" target="_blank" rel="noopener">기상청</a> · <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">일본 기상청</a></p>
-  <p>자료 출처: <a href="https://www.ncei.noaa.gov/products/international-best-track-archive" target="_blank" rel="noopener">IBTrACS</a> · <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">気象庁(일본 기상청)</a> · <a href="https://www.metoc.navy.mil/jtwc/jtwc.html" target="_blank" rel="noopener">JTWC(미국)</a> · <a href="https://apihub.kma.go.kr/" target="_blank" rel="noopener">기상청 API허브</a> · <a href="https://registry.opendata.aws/noaa-gfs-bdp-pds/" target="_blank" rel="noopener">NOAA GFS</a> · <a href="https://psl.noaa.gov/data/gridded/data.ncep.reanalysis.html" target="_blank" rel="noopener">NOAA NCEP 재분석</a> · <a href="https://www.water.or.kr/kor/menu/sub.do?menuId=16_166_168_268" target="_blank" rel="noopener">재산피해: 2023 재해연보(행정안전부)</a></p>
+  <p>자체 모델 예측 · 공식 예보 아님 <span>—</span> 자료: <a href="https://www.ncei.noaa.gov/products/international-best-track-archive" target="_blank" rel="noopener">IBTrACS</a>, <a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">気象庁</a>, <a href="https://www.metoc.navy.mil/jtwc/jtwc.html" target="_blank" rel="noopener">JTWC</a>, <a href="https://apihub.kma.go.kr/" target="_blank" rel="noopener">기상청 API허브</a>, <a href="https://registry.opendata.aws/noaa-gfs-bdp-pds/" target="_blank" rel="noopener">NOAA GFS</a>, <a href="https://psl.noaa.gov/data/gridded/data.ncep.reanalysis.html" target="_blank" rel="noopener">NCEP 재분석</a>, <a href="https://www.water.or.kr/kor/menu/sub.do?menuId=16_166_168_268" target="_blank" rel="noopener">재해연보</a></p>
 </footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="app.js?v=20261108-1"></script>
+<script src="app.js?v=20261109-1"></script>
 </body>
 </html>
