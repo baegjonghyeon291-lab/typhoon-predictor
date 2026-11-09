@@ -9,7 +9,7 @@ import pandas as pd
 from .data import load, download, haversine, ROOT, CITIES, CITY_NAMES, RADIUS_KM
 from . import realtime
 from .explain import safe_contributions
-from .features import add_features, add_env, predict, predict_range, ENV_FEATURES, FEATURES
+from .features import add_features, add_env, ENV_FEATURES, FEATURES
 from .train import SPLIT_YEAR
 
 OUT = ROOT / "docs" / "data"
@@ -23,10 +23,11 @@ def num(v, d=2):
 
 
 def predict_rows(d, models):
+    """실제 예측: 기존 모델 + GFS 예측 경로 결합(gfs_arrival.serve, GFS 경로가 없는 시점은 기존 모델)."""
+    from .gfs_arrival import serve
     d = d.copy()
     for c in models:
-        d[f"p_{c}"], d[f"h_{c}"] = predict(c, d)
-        d[f"lo_{c}"], d[f"hi_{c}"] = predict_range(c, d)
+        d[f"p_{c}"], d[f"h_{c}"], d[f"lo_{c}"], d[f"hi_{c}"] = serve(c, d)
     return d
 
 
@@ -134,7 +135,12 @@ def safe_own_track(g):
 def export_recent(df, models, live=False):
     last_time = df.time.max()
     sids = df[df.time >= last_time - pd.Timedelta(days=RECENT_DAYS)].SID.unique()
-    storms = []
+    storms, own_by = [], {}
+    if live:            # 자체 경로가 지금 쓸 수 있는 GFS 발표를 받아 두므로 도착 확률 결합보다 먼저
+        for sid in sids:
+            gs = df[df.SID == sid].sort_values("time")
+            if gs.time.iloc[-1] == last_time:
+                own_by[sid] = safe_own_track(gs)
     for sid in sids:
         g = predict_rows(df[df.SID == sid], models)
         last = g.iloc[-1]
@@ -180,7 +186,7 @@ def export_recent(df, models, live=False):
             if s["name"].upper() in kr:
                 s["forecast_kr"] = kr_forecast(kr[s["name"].upper()])
             gs = df[df.SID == s["sid"]].sort_values("time")
-            own = safe_own_track(gs)
+            own = own_by.get(s["sid"])
             if own:
                 s["track_own"] = own
                 try:                                    # GEFS 앙상블 전향 확률(2~4일 뒤까지)

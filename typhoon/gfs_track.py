@@ -7,7 +7,7 @@ GFS 1.0° 예보 파일(AWS noaa-gfs-bdp-pds, 키 없음)의 첫 메시지인 �
 시점 t의 특성은 그때 이미 공개된 발표(t보다 6시간 이상 앞선 00·12시)만 쓴다. 공개는 발표 약 4시간 뒤다.
 
     python -m typhoon.gfs_track fetch        # 2021-06~ 태풍이 있던 발표 받기(오래 걸림, 이어받기 됨)
-    python -m typhoon.gfs_track track        # 중심 추적 → data/env/gfs_fc/tracks.parquet
+    python -m typhoon.gfs_track track        # 중심 추적 → data/gfs_tracks.parquet
     python -m typhoon.gfs_track experiment   # 경로·전향 비교 → reports/gfs_track_experiment.txt
 """
 import argparse
@@ -25,7 +25,7 @@ import requests
 from .data import ROOT, haversine
 
 DIR = ROOT / "data" / "env" / "gfs_fc"
-TRACKS = DIR / "tracks.parquet"
+TRACKS = ROOT / "data" / "gfs_tracks.parquet"   # 저장소에 넣어 자동 갱신도 지난 태풍 결합에 쓴다
 REPORT = ROOT / "reports" / "gfs_track_experiment.txt"
 URL = "https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{c:%Y%m%d}/{c:%H}/atmos/gfs.t{c:%H}z.pgrb2.1p00.f{f:03d}"
 FIRST = pd.Timestamp("2021-06-01")

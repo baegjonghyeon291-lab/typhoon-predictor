@@ -972,7 +972,7 @@ function renderModel(stats) {
   const bar = (v, lo, hi, mark) => `<i class="mt-bar"><u style="width:${Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * 100}%"></u>${mark != null ? `<s style="left:${(mark - lo) / (hi - lo) * 100}%"></s>` : ""}</i>`;
   const draw = () => {
     const rows = [["경로 모델", m[country], (a.model_warning_lead || {})[country] || {}],
-      ["환경 모델", (m.full || {})[country] || m[country], (a.model_warning_lead_full || {})[country] || {}]];
+      ["환경+GFS 모델", (m.full || {})[country] || m[country], (a.model_warning_lead_full || {})[country] || {}]];
     $("modelTable").innerHTML = `<table class="mt"><thead><tr><th></th><th>AUC</th><th>확률 보정(Brier)</th><th>도착 시각 오차</th><th>80% 범위 안에 도착</th><th>첫 도달 예측</th></tr></thead><tbody>`
       + rows.map(([name, x, w], i) => `<tr${i ? ' class="main"' : ""}><th scope="row">${name}</th>`
         + `<td><b>${x.auc.toFixed(3)}</b>${bar(x.auc, .5, 1)}</td>`

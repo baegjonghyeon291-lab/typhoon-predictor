@@ -445,7 +445,7 @@ def test_false_alarm(monkeypatch):
     t = pd.to_datetime(["2020-08-01T00", "2020-08-02T00", "2020-08-01T00", "2020-08-01T00"])
     df = pd.DataFrame({"SID": ["hit", "hit", "miss", "quiet"], "SEASON": 2020, "time": t,
                        "in_korea": [False, True, False, False]})
-    monkeypatch.setattr(analyze, "predict", lambda c, d: (np.where(d.SID == "quiet", .1, .9), None))
+    monkeypatch.setattr(analyze, "serve", lambda c, d: (np.where(d.SID == "quiet", .1, .9), None, None, None))
     assert analyze.false_alarm(df, "korea") == {"warned_storms": 2, "false_alarm_ratio": .5}
 
 
@@ -666,3 +666,52 @@ def test_review_false_call_and_summary():
     assert "kma: 자료 있는 태풍 2개 중 미리 예측 1개" in lines[0]
     assert lines[3] == "kma: 전향 없던 태풍 1개 중 전향 예측 1개" and lines[4].startswith("own: 전향 없던 태풍 0개")
     assert "같은 표본(자체 경로 자료가 있는 1개) kma: 자료 있는 태풍 1개 중 미리 예측 0개" in lines[6]
+
+
+# ---------------------------------------------------------------- GFS 경로 결합
+from typhoon import gfs_arrival  # noqa: E402
+
+
+def _gfs_rows():
+    t = pd.date_range("2024-08-01T06", periods=3, freq="6h")
+    return pd.DataFrame({"SID": "X", "time": t, "LAT": [28.0, 28.5, 29.0], "LON": [128.0, 128.0, 128.0]})
+
+
+def test_gfs_path_entry_and_distance(monkeypatch):
+    # 2024-08-01 00시 발표: 6시간마다 북쪽 1도씩(서울 쪽) → 06시 시점(나이 6h)에서 영향권 진입
+    lead = np.arange(0, 133, 6, dtype=float)
+    path = (lead, 28.0 + lead / 6 * 1.0 - 1.0, np.full(len(lead), 127.0))
+    monkeypatch.setattr(gfs_arrival, "_paths", lambda: {("X", pd.Timestamp("2024-08-01T00")): path})
+    d = _gfs_rows().iloc[:1]
+    entry, mind = gfs_arrival.gfs_path(d, "korea")
+    lat = 28.0 + np.arange(0, 121) / 6
+    from typhoon.data import CITIES
+    km = np.min([haversine(lat, np.full(len(lat), 128.0), *q) for q in CITIES["korea"]], axis=0)
+    assert entry[0] == np.argmax(km <= 200) and mind[0] == pytest.approx(km.min(), abs=1)
+
+
+def test_gfs_path_missing_cycle_keeps_nan(monkeypatch):
+    monkeypatch.setattr(gfs_arrival, "_paths", lambda: {})
+    monkeypatch.setattr(gfs_arrival, "_path", lambda c: ROOT / "없는_파일.npz")
+    entry, mind = gfs_arrival.gfs_path(_gfs_rows(), "korea")
+    assert np.isnan(entry).all() and np.isnan(mind).all()
+
+
+def test_combine_only_where_gfs(monkeypatch):
+    prm = {"korea": {"coef": [0.1, 1.4, -3.3, 0.4], "intercept": -1.2, "entry_err80_h": 7.0}}
+    monkeypatch.setattr(gfs_arrival, "load_params", lambda: prm)
+    p, h, lo, hi = np.array([.2, .2, .2]), np.array([50., 50., 50.]), np.array([30., 30., 30.]), np.array([70., 70., 70.])
+    entry, mind = np.array([np.nan, np.nan, 20.]), np.array([np.nan, 900., 100.])
+    p2, h2, lo2, hi2 = gfs_arrival.combine("korea", p, h, lo, hi, entry, mind)
+    assert p2[0] == .2 and h2[0] == 50 and lo2[0] == 30           # GFS 경로 없음: 그대로
+    assert p2[1] < .2 and h2[1] == 50                              # 멀리 지나감: 확률 내려감, 시간은 기존
+    assert p2[2] > .5 and h2[2] == 20 and lo2[2] == 13 and hi2[2] == 27   # 진입: 진입 시각 ± 80% 오차
+    assert p[1] == .2                                              # 입력은 바꾸지 않음
+    monkeypatch.setattr(gfs_arrival, "load_params", lambda: None)
+    assert np.allclose(gfs_arrival.combine("korea", p, h, lo, hi, entry, mind)[0], p)
+
+
+def test_gfs_arrival_params_file():
+    prm = json.loads((ROOT / "models" / "gfs_arrival.json").read_text(encoding="utf-8"))
+    for c in ("korea", "japan"):
+        assert len(prm[c]["coef"]) == len(gfs_arrival.X_NAMES) and prm[c]["entry_err80_h"] > 0

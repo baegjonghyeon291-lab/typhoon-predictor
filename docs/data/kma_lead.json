@@ -181,11 +181,11 @@
   },
   "our_model_korea_full": {
     "storms": 28,
-    "median_warning_lead_h": 36.0,
-    "warned_24h_before": 0.75,
-    "warned_48h_before": 0.393,
-    "warned_72h_before": 0.179,
-    "warned_96h_before": 0.071,
+    "median_warning_lead_h": 39.0,
+    "warned_24h_before": 0.821,
+    "warned_48h_before": 0.464,
+    "warned_72h_before": 0.25,
+    "warned_96h_before": 0.107,
     "warned_120h_before": 0.071
   },
   "kma_track_error": {
@@ -318,7 +318,7 @@
   },
   "notes": [
     "기상청 발표 시각은 TYP_TM(분석시각, UTC). 실제 공개 시각은 이보다 늦다.",
-    "선행시간 0 이하·예측 없음은 0으로 두고 비율 계산(우리 모델 warning_lead 와 같은 방식). raw 는 음수 포함 원값.",
+    "선행시간 0 이하·예측 없음은 0으로 두고 비율 계산(자체 모델 warning_lead 와 같은 방식). raw 는 음수 포함 원값.",
     "first_fcst_track_in_korea: 예측점(FT=1) 중 한국 6개 도시 200km 안 점이 처음 나온 발표. interp1h 는 점 사이 직선 보간."
   ]
 }

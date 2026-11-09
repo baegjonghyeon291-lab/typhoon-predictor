@@ -5,7 +5,8 @@ import pandas as pd
 from sklearn.inspection import permutation_importance
 
 from .data import load, ROOT
-from .features import add_features, add_targets, add_env, load_model, model_features, predict, prob
+from .features import add_features, add_targets, add_env, load_model, model_features, prob
+from .gfs_arrival import serve
 from .train import SPLIT_YEAR
 
 THRESHOLD = 0.4           # 보정된 확률 기준. 보정 전 0.5 기준과 헛경보 비율이 비슷하다(train.calibration)
@@ -26,7 +27,7 @@ def warning_lead(df, country, full=False):
     d = add_targets(df[df.SEASON >= SPLIT_YEAR], country)
     d = d[d.arrival.notna()].copy()
     if full:
-        d["p"] = predict(country, d)[0]
+        d["p"] = serve(country, d)[0]          # 실제 예측과 같게 GFS 경로 결합 포함
     else:
         m = load_model(country, full=False)
         d["p"] = prob(m, d[model_features(m)])
@@ -42,7 +43,7 @@ def warning_lead(df, country, full=False):
 def false_alarm(df, country):
     """검증 기간에 경보(보정 확률 THRESHOLD 이상)를 낸 태풍 중 영향권에 끝내 들어오지 않은 비율."""
     d = add_targets(df[df.SEASON >= SPLIT_YEAR], country)
-    warned = d[predict(country, d)[0] >= THRESHOLD].groupby("SID").arrival.first()
+    warned = d[serve(country, d)[0] >= THRESHOLD].groupby("SID").arrival.first()
     return {"warned_storms": int(len(warned)), "false_alarm_ratio": round(float(warned.isna().mean()), 3) if len(warned) else None}
 
 

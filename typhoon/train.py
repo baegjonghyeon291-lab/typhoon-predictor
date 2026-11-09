@@ -13,7 +13,7 @@ from sklearn.metrics import roc_auc_score, brier_score_loss, mean_absolute_error
 from sklearn.model_selection import GroupKFold
 
 from .data import load, ROOT
-from .features import (add_features, add_targets, add_env, env_columns, predict, predict_range, prob, model_features,
+from .features import (add_features, add_targets, add_env, env_columns, prob, model_features,
                        FEATURES)
 
 SPLIT_YEAR = 2015
@@ -83,10 +83,11 @@ def train_country(df, country, features, name):
 
 
 def serving_metrics(df, country):
-    """실제 서비스 방식(환경 자료 없으면 경로 모델로 대체)으로 검증 기간 전체 평가."""
+    """실제 서비스 방식(환경 자료 없으면 경로 모델로 대체, GFS 예측 경로가 있으면 결합)으로 검증 기간 전체 평가.
+    GFS 결합 계수는 2021-06 이후 전체로 맞춘 값이라 그 기간은 학습 자료가 섞인다(연도별 교차 성적은 gfs_arrival 보고서)."""
+    from .gfs_arrival import serve
     te = add_targets(df[df.SEASON >= SPLIT_YEAR], country)
-    p, h = predict(country, te)
-    lo, hi = predict_range(country, te)
+    p, h, lo, hi = serve(country, te)
     hit = te.hit.to_numpy() == 1
     y = te.hours_to.to_numpy()[hit]
     return {"auc": round(roc_auc_score(te.hit, p), 4), "brier": round(brier_score_loss(te.hit, p), 4),
@@ -123,9 +124,17 @@ def calibrate_only(df):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--calibrate-only", action="store_true", help="트리는 두고 확률 보정만 다시 맞춤")
-    df = add_env(add_features(load()))
-    if ap.parse_args().calibrate_only:
+    ap.add_argument("--serving-only", action="store_true", help="모델은 두고 실제 서비스 방식 성적만 다시 계산")
+    a = ap.parse_args()
+    df = add_env(add_features(load()), gfs=a.serving_only)
+    if a.calibrate_only:
         return calibrate_only(df)
+    if a.serving_only:
+        out = json.loads((ROOT / "reports" / "metrics.json").read_text(encoding="utf-8"))
+        for c in ["korea", "japan"]:
+            out["full"][c].update(serving_metrics(df, c))
+        (ROOT / "reports" / "metrics.json").write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+        return print(json.dumps(out["full"], indent=2, ensure_ascii=False))
     (ROOT / "models").mkdir(exist_ok=True)
     out = {c: train_country(df, c, FEATURES, c) for c in ["korea", "japan"]}
     env = env_columns(df)
