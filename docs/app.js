@@ -69,18 +69,18 @@ function seen(el, fn, th = .15) {
 
 /* 강도 체계 (풍속 kt 기준, 없으면 JMA 등급). 33·44·54m/s(약 64·85·105kt)는 기상청 강·매우강·초강력 경계 */
 const LV = [
-  { name: "열대저압부", color: "#6b8299", ink: "#a9c0d4" },
-  { name: "열대폭풍", color: "#2aa7d8", ink: "#6fd3f5" },
-  { name: "강한 열대폭풍", color: "#f08a1c", ink: "#ffb35c" },
-  { name: "강한 태풍", color: "#e5383b", ink: "#ff8a8d" },
-  { name: "매우 강한 태풍", color: "#a4161a", ink: "#ff9a9e" },
-  { name: "초강력 태풍", color: "#7b2cbf", ink: "#d3a6f7" },
+  { name: "열대저압부", color: "#aab3bc", ink: "#a9c0d4" },
+  { name: "열대폭풍", color: "#edc04a", ink: "#6fd3f5" },
+  { name: "강한 열대폭풍", color: "#ee8d2f", ink: "#ffb35c" },
+  { name: "강한 태풍", color: "#d9482b", ink: "#ff8a8d" },
+  { name: "매우 강한 태풍", color: "#a11d33", ink: "#ff9a9e" },
+  { name: "초강력 태풍", color: "#5a1846", ink: "#d3a6f7" },
 ];
 const lvLabel = i => i ? `${i}단계` : LV[0].name;
-const NO_LV = "#14213d";
-const US_LINE = "#0b8a5f";
-const OWN_LINE = "#c8187f";    // 자체 경로(GFS 중심 추적)
-const KR_LINE = "#8a5a00";     // 한국 기상청 예보
+const NO_LV = "#3d444b";
+const US_LINE = "#0f766e";
+const OWN_LINE = "#1d4ed8";    // 자체 경로(GFS 중심 추적)
+const KR_LINE = "#b45309";     // 한국 기상청 예보
 function lvIndex(kt, grade) {
   if (kt != null) return kt < 34 ? 0 : kt < 48 ? 1 : kt < 64 ? 2 : kt < 85 ? 3 : kt < 105 ? 4 : 5;
   return grade === 3 ? 1 : grade === 4 ? 2 : grade === 5 ? 3 : 0;
@@ -118,7 +118,7 @@ function ensurePanes(map) {
 
 // 지도마다 범례 하나(오른쪽 아래, 좁은 화면은 접힘), 확대 버튼은 오른쪽 위
 function baseMap(id, center = [30, 130], zoom = 4, { forecast = false } = {}) {
-  const legendOpen = forecast && window.innerWidth > 860;      // 지난 태풍 지도는 접어 두어 경로를 가리지 않게
+  const legendOpen = true;      // 지난 태풍 지도는 접어 두어 경로를 가리지 않게
   const map = L.map(id, { zoomControl: false, scrollWheelZoom: false, worldCopyJump: true, dragging: !L.Browser.mobile }).setView(center, zoom);
   L.control.zoom({ position: "topright" }).addTo(map);
   map.attributionControl.setPrefix("Leaflet");
@@ -342,7 +342,7 @@ function renderNow(latest) {
   list.innerHTML = "";
   const liveBounds = [];
   const wide = () => window.innerWidth > 860;
-  const pad = () => ({ paddingTopLeft: [wide() ? (window.PAD_L ?? 420) : 64, 44], paddingBottomRight: [wide() ? 120 : 64, 44], maxZoom: 5 });
+  const pad = () => ({ paddingTopLeft: [wide() ? (window.PAD_L ?? 420) : 64, 44], paddingBottomRight: [wide() ? (window.PAD_R ?? 120) : 64, window.PAD_B ?? 44], maxZoom: window.MAP_MAXZ ?? 5 });
   const cards = [];
   let selected = null, view = null, allView = null;
 
@@ -697,12 +697,14 @@ function renderHistory(history, damage, review = {}) {
   function summary() {
     const lead = firstLead(cur), first = lead != null;
     const it = items[history.indexOf(cur)];
-    return `<b>${cur.season} ${stormFull(cur)}</b>` + (""
-      + (it.lv != null ? ` · ${it.lv ? `${lvLabel(it.lv)}(${LV[it.lv].name}, ` : `${lvLabel(0)}(`}최대 ${it.peak}kt${cur.wind_usa ? ", 미국 풍속 환산" : ""})` : "")
-      + (it.dmg ? ` · 재산피해 ${won(it.dmg)}` : "")
-      + (cur.arrival ? ` · 한국 200km 진입 ${kst(cur.arrival)} · ${first ? `한국 첫 도달 예측 ${lead}시간 전` : "한국 도달 예측 없음"}`
-        : ` · 한국 도시까지 최단 ${cur.closest.km}km(${kst(cur.closest.t)}) · ${first ? `한국 도달 예측(빗나감) ${lead}시간 전` : "한국 도달 예측 없음"}`)
-      + (cur.arrival_japan ? ` · 일본 200km 진입 ${kst(cur.arrival_japan)}` : "")).replace(/^ · /, "")
+    const rows = [
+      it.lv != null ? ["강도", `${it.lv ? `${lvLabel(it.lv)} ${LV[it.lv].name}` : lvLabel(0)} · 최대 ${it.peak}kt${cur.wind_usa ? "(미국 풍속 환산)" : ""}`] : null,
+      cur.arrival ? ["한국 200km 진입", kst(cur.arrival)] : ["한국 도시까지 최단", `${cur.closest.km}km · ${kst(cur.closest.t)}`],
+      [cur.arrival ? "한국 첫 도달 예측" : first ? "한국 도달 예측(빗나감)" : "한국 도달 예측", first ? `${lead}시간 전` : "없음"],
+      cur.arrival_japan ? ["일본 200km 진입", kst(cur.arrival_japan)] : null,
+      it.dmg ? ["재산피해", won(it.dmg)] : null,
+    ].filter(Boolean);
+    return `<b>${cur.season} ${stormFull(cur)}</b><span class="hs">${rows.map(([k, v]) => `<span><i>${k}</i>${v}</span>`).join("")}</span>`
       + turnLine(review[cur.sid])
       + (cur.peak ? `<span class="h-why">한국 최고 확률 ${pct(cur.peak.p)}(${kst(cur.peak.t)})${cur.peak.why?.length ? ` · 요인별 영향(그 요인이 없을 때와 비교): ${whyText(cur.peak.why)}` : ""}</span>` : "");
   }
@@ -991,23 +993,23 @@ function renderModel(stats) {
 /* ---------- 경로 예측 ---------- */
 function renderTrack(t) {
   const hrs = t.base.map(r => `${r.h}h`);
-  const line = (label, data, color, o = {}) => ({ label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 3.5, pointHoverRadius: 5, tension: 0, ...o });
+  const line = (label, data, color, o = {}) => ({ label, data, borderColor: color, backgroundColor: color, borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 4, tension: 0, ...o });
   // 세 그래프 공통 설정: y축과 단위, x축 눈금만 다르다
   const opts = (y, unit, xTicks = {}) => ({ maintainAspectRatio: false, animation: false, layout: { padding: { right: 96, top: 8 } }, interaction: { mode: "index", intersect: false },
     scales: { y, x: { grid: { display: false }, ticks: xTicks } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${c.formattedValue}${unit}` } } } });
-  const km = { beginAtZero: true, ticks: { callback: v => `${v.toLocaleString()}km`, maxTicksLimit: 5 } };
+  const km = { beginAtZero: true, ticks: { callback: v => `${v.toLocaleString()}km`, maxTicksLimit: 4 } };
   seen($("track"), () => {
     if (!window.Chart) return;
     new Chart($("trackChart"), { type: "line", plugins: [endLabels], data: { labels: hrs, datasets: [
-      line("단순 연장", t.base.map(r => r.extrap), C.muted, { borderDash: [5, 4] }),
-      line("자체 모델", t.base.map(r => r.model), C.korea, { borderWidth: 2.6 })] }, options: opts(km, "km") });
+      line("단순 연장", t.base.map(r => r.extrap), C.muted, {}),
+      line("자체 모델", t.base.map(r => r.model), C.korea, { borderWidth: 2.25 })] }, options: opts(km, "km") });
     new Chart($("gfsChart"), { type: "line", plugins: [endLabels], data: { labels: t.gfs.map(r => `${r.h}h`), datasets: [
-      line("기존 모델", t.gfs.map(r => r.model), C.muted, { borderDash: [5, 4] }),
-      line("GFS 결합", t.gfs.map(r => r.blend), C.korea, { borderWidth: 2.6 })] }, options: opts(km, "km") });
+      line("기존 모델", t.gfs.map(r => r.model), C.muted, {}),
+      line("GFS 결합", t.gfs.map(r => r.blend), C.korea, { borderWidth: 2.25 })] }, options: opts(km, "km") });
     const ref = { id: "ref", afterDatasetsDraw(c) { const { ctx, chartArea: ar, scales: { y } } = c, py = y.getPixelForValue(50); ctx.save(); ctx.strokeStyle = C.grid.replace(/[\d.]+\)$/, ".35)"); ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(ar.left, py); ctx.lineTo(ar.right, py); ctx.stroke(); ctx.restore(); } };
     new Chart($("champiChart"), { type: "line", plugins: [ref, endLabels], data: { labels: t.champi.map(r => r.kst), datasets: [
-      line("기존 분류", t.champi.map(r => r.clf * 100), C.muted, { borderDash: [5, 4], pointRadius: 0 }),
-      line("GFS 결합", t.champi.map(r => r.blend * 100), C.korea, { borderWidth: 2.6, pointRadius: 0 })] },
+      line("기존 분류", t.champi.map(r => r.clf * 100), C.muted, {}),
+      line("GFS 결합", t.champi.map(r => r.blend * 100), C.korea, { borderWidth: 2.25 })] },
       options: opts({ min: 0, max: 100, ticks: { callback: v => v + "%", stepSize: 50 } }, "%", { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }) });
   }, .05);
   $("turnAuc").innerHTML = `<table class="auc"><thead><tr><th>방법</th><th>AUC</th><th>실제 전향 중 맞힘</th><th>전향 예측이 맞은 비율</th></tr></thead><tbody>`

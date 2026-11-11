@@ -1,0 +1,269 @@
+/* 지도 중심 디자인. 규칙은 하나:
+   - 세로 축 하나: 왼쪽 420px(패널·섹션 제목) / 오른쪽(지도·내용)
+   - 글자 5단계: 12 · 14 · 16 · 20 · 32
+   - 색 역할: 잉크(글), 파랑(자체 모델·고른 것), 빨강(한국에 위험할 때만), 회색(비교 대상·일본)
+   - 표·버튼·선 모양은 전 섹션 공통 */
+:root {
+  --top: 52px; --side: 440px; --pad: 28px;
+  --ink: #14171a; --text: #2c3137; --mute: #6d747c; --faint: #a0a6ad;
+  --line: #e4e6e8; --line2: #cdd1d5; --soft: #f4f5f6;
+  --acc: #1d4ed8; --warn: #d92d20;
+  --sans: "Pretendard Variable", Pretendard, system-ui, sans-serif;
+}
+html { scroll-behavior: smooth; scroll-padding-top: var(--top); }
+body { background: #fff; color: var(--text); font: 16px/1.5 var(--sans); font-variant-numeric: tabular-nums; min-width: 1200px; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { text-decoration: none; }
+:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+
+/* 숨기는 보조 문구 */
+#asof, #toMap, .cmp-cap, .cmp th small, .eta.why, .last-card .who, .src, .rel-table, .h-why { display: none !important; }
+
+/* ---------- 메뉴 ---------- */
+.top { position: sticky; top: 0; z-index: 2000; height: var(--top); display: flex; align-items: center; padding: 0 var(--pad); background: #fff; border-bottom: 1px solid var(--line2); }
+.top .brand { width: calc(var(--side) - var(--pad)); font-size: 16px; font-weight: 800; color: var(--ink); letter-spacing: -.01em; }
+.top nav { display: flex; height: 100%; }
+.top nav a { display: flex; align-items: center; padding: 0 16px; font-size: 14px; font-weight: 600; color: var(--mute); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.top nav a:first-child { padding-left: 0; margin-left: var(--pad); }
+.top nav a:hover { color: var(--ink); }
+.top nav a[aria-current] { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* ---------- 공통 부품 ---------- */
+.seg { display: inline-flex; border: 1px solid var(--line2); }
+.seg button { padding: 5px 10px; background: #fff; border: 0; border-left: 1px solid var(--line2); font-size: 12px; font-weight: 600; color: var(--mute); }
+.seg button:first-child { border-left: 0; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.lv { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--mute); white-space: nowrap; }
+.lv::before { content: ""; width: 8px; height: 8px; background: var(--c); }
+.empty { padding: 16px 0; font-size: 14px; color: var(--mute); }
+.retry { padding: 2px 8px; background: #fff; border: 1px solid var(--line2); font-size: 12px; }
+select { padding: 6px 8px; background: #fff; border: 1px solid var(--line2); border-radius: 0; font-size: 14px; }
+input[type=search] { padding: 6px 10px; background: #fff; border: 1px solid var(--line2); border-radius: 0; font-size: 14px; outline-offset: 0; }
+input[type=search]::placeholder { color: var(--faint); }
+
+/* 표: 전 섹션 같은 모양 */
+main table { font-size: 16px; }
+main thead th { padding: 0 12px 8px 0; font-size: 12px; font-weight: 600; color: var(--mute); border-bottom: 1px solid var(--ink); }
+main tbody td, main tbody th { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); font-weight: 400; color: var(--text); }
+main tbody th { text-align: left; font-weight: 600; color: var(--ink); }
+main tr > :last-child { padding-right: 0; }
+
+/* ---------- 지도 공통 ---------- */
+.map { background: #e9ebec; }
+.leaflet-tile-pane { filter: grayscale(1) sepia(.22) hue-rotate(172deg) saturate(1.5) contrast(.93) brightness(1.04); }
+.leaflet-bar { border: 1px solid var(--line2) !important; }
+.leaflet-bar a { width: 30px !important; height: 30px !important; line-height: 28px !important; color: var(--ink) !important; font: 400 20px/28px var(--sans) !important; border-bottom-color: var(--line) !important; }
+.leaflet-bar a:hover { background: var(--soft) !important; }
+.leaflet-top.leaflet-right { display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 8px; padding: 12px 12px 0 0; }
+.leaflet-top.leaflet-right .leaflet-control { margin: 0; float: none; }
+.map-all { height: 32px; padding: 0 12px; background: #fff; border: 1px solid var(--line2); font-size: 12px; font-weight: 600; color: var(--ink); }
+.map-all:hover { background: var(--soft); }
+.leaflet-control-attribution { background: rgba(255,255,255,.7) !important; color: var(--faint) !important; }
+.leaflet-control-attribution a { color: var(--mute) !important; }
+.src-toggle { display: flex; gap: 4px; margin: 12px 0 0 12px !important; padding: 0; background: #fff; border: 1px solid var(--line2); font-size: 12px; font-weight: 600; color: var(--ink); }
+.src-toggle label { position: relative; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; cursor: pointer; white-space: nowrap; }
+.src-toggle label + label { border-left: 1px solid var(--line); }
+.src-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.src-toggle i { width: 20px; height: 0; }
+.src-toggle label:has(input:not(:checked)) { color: var(--faint); text-decoration: line-through; }
+.src-toggle label:has(input:not(:checked)) i { opacity: .25; }
+.src-toggle label:has(input:focus-visible) { outline: 2px solid var(--acc); outline-offset: -2px; }
+.tc-legend { display: block; max-width: 470px; margin: 0 12px 22px 0 !important; padding: 6px 4px 6px 12px; background: #fff; border: 1px solid var(--line2); font-size: 12px; font-weight: 500; color: var(--text); line-height: 1.7; }
+.tc-legend summary, .tc-legend .sep, .tc-legend .sep ~ div { display: none; }      /* 예보선은 왼쪽 위 줄에 이미 있다 */
+.tc-legend div { display: inline-flex; gap: 6px; margin-right: 12px; }
+.tc-legend i { width: 10px; height: 10px; }
+.tc-label { background: var(--ink); border: 0; color: #fff; font-size: 12px; font-weight: 700; padding: 3px 8px; gap: 8px; }
+.tc-label small { color: #c3c8cd; font-weight: 500; }
+.tc-end .tc-label { background: #fff; border: 1px solid var(--line2); color: var(--text); font-weight: 600; }
+.tc-fc span { padding: 0; background: none; border: 0; transform: translate(9px, -50%); font-size: 11px; font-weight: 700; color: var(--ink) !important; text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 3px #fff; }
+.tc-city i, .tc-city.jp i { width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; background: var(--ink); border: 0; }
+.tc-city span { color: var(--ink); font-weight: 600; }
+.tc-city.jp span { color: var(--mute); font-weight: 500; }
+.tc-date span { color: var(--mute); font-weight: 600; }
+.all-tip { border: 1px solid var(--ink); border-radius: 0; box-shadow: none; font: 600 12px var(--sans); color: var(--ink); }
+.map-empty { font-size: 14px; color: var(--mute); }
+
+/* ---------- 현재 태풍: 왼쪽 패널 + 지도 ---------- */
+#now, #history { height: calc(100vh - var(--top)); min-height: 700px; border-bottom: 1px solid var(--line2); }
+#now { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); }
+#now .cover { display: flex; flex-direction: column; overflow-y: auto; padding: 28px var(--pad) 0; border-right: 1px solid var(--line2); }
+#nowPanel { flex: 1; display: flex; flex-direction: column; }
+#now .cover-map { margin: 0; min-width: 0; }
+#nowMap { height: 100%; }
+
+.kf-lv { font-size: 14px; font-weight: 500; color: var(--mute); }
+.kf-name { margin-top: 4px; font-size: 32px; font-weight: 800; line-height: 1.25; letter-spacing: -.02em; color: var(--ink); }
+.kf-name span { margin-left: 8px; font-size: 14px; font-weight: 500; letter-spacing: .04em; color: var(--faint); }
+.kf-say { margin-top: 2px; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.kf-say.warn { color: var(--warn); }
+.kf-p { margin: 20px 0 0; border-top: 1px solid var(--ink); }
+.kf-p > div { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 2px 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.kf-p dt { font-size: 14px; font-weight: 600; color: var(--mute); }
+.kf-p dd { display: contents; }
+.kf-p .spark { width: 100%; height: 44px; overflow: visible; }
+.kf-p .spark polyline { fill: none; stroke: var(--ink); stroke-width: 1.75; vector-effect: non-scaling-stroke; }
+.kf-p .spark line { stroke: var(--line2); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.kf-p b { min-width: 84px; text-align: right; font-size: 20px; font-weight: 700; color: var(--ink); }
+.kf-p .warn b { color: var(--warn); }
+.kf-p .warn .spark polyline { stroke: var(--warn); }
+.kf-p em { grid-column: 2 / -1; font-style: normal; font-size: 14px; color: var(--text); }
+.kf-more { margin-top: 12px; font-size: 14px; }
+.kf-more li { display: flex; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); color: var(--mute); }
+.kf-more b { flex: 1; color: var(--ink); font-weight: 600; }
+
+.stale-note { margin: 16px 0 0; padding: 8px 12px; background: var(--soft); border-left: 2px solid var(--ink); font-size: 14px; color: var(--ink); }
+.stale-note a { text-decoration: underline; text-underline-offset: 2px; }
+#now:has(#nowPanel.stale) .kf-p { opacity: .55; }
+#now:has(.cv-quiet) .storm-list > li.empty { display: none; }
+
+.storm-list > li { margin-top: 24px; padding: 0 0 0 12px; border-left: 2px solid transparent; }
+.storm-list > li.sel { border-left-color: var(--acc); }
+.storm-list > li:first-child:not(.last-card):not(.empty) .s-head,
+.storm-list > li:first-child:not(.last-card):not(.empty) .vit { display: none; }      /* 위 머리글과 같은 내용 */
+.storm-list > li.empty { margin-top: 16px; padding: 0; border: 0; }
+.s-head b { font-size: 16px; font-weight: 700; color: var(--ink); }
+.vit { margin-top: 2px; font-size: 14px; color: var(--mute); }
+.vit b { font-weight: 600; color: var(--text); }
+#now .cmp { margin-top: 8px; font-size: 14px; }
+#now .cmp thead th { padding-bottom: 6px; }
+#now .cmp tbody th, #now .cmp tbody td { padding: 8px 8px 8px 0; font-size: 14px; }
+#now .cmp tbody th { font-weight: 500; color: var(--mute); }
+#now .cmp td.self { font-size: 16px; font-weight: 700; color: var(--ink); }
+#now .cmp td.differ { color: var(--ink); font-weight: 700; }
+.eta.when { margin-top: 10px; font-size: 14px; color: var(--ink); }
+.eta.when .who { display: inline; font-weight: 700; margin-right: 4px; }
+.eta.when.range { margin-top: 2px; color: var(--mute); }
+.last-card .last-link { display: inline-block; margin-top: 8px; font-size: 14px; font-weight: 600; color: var(--acc); }
+.last-card .last-link:hover { text-decoration: underline; }
+
+.gone-box { margin: auto calc(var(--pad) * -1) 0; padding: 0 var(--pad) 12px; border-top: 1px solid var(--line2); }
+.gone-box::before { content: ""; display: block; height: 0; }
+.storm-list { margin-bottom: 28px; }
+.gone-box summary { padding: 14px 0 4px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.gone-list li { padding: 8px 0 8px 12px; border-bottom: 1px solid var(--line); border-left: 2px solid transparent; font-size: 14px; color: var(--mute); }
+.gone-list li.sel { border-left-color: var(--acc); }
+.gone-list li b { font-weight: 600; color: var(--ink); }
+.gone-list li em { color: var(--text); }
+
+/* ---------- 지난 태풍: 왼쪽 목록 + 지도 + 아래 요약 ---------- */
+#history .wrap, #history .spread { height: 100%; }
+#history .wrap { position: relative; }
+#history .wrap > .sec-title { position: absolute; left: var(--pad); top: 24px; padding-left: 0 !important; font-size: 20px; font-weight: 800; color: var(--ink); }
+#history .spread { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); }
+#history .toc { display: flex; flex-direction: column; min-height: 0; padding: 64px 0 0; border-right: 1px solid var(--line2); }
+#history .hist-filter { display: grid; grid-template-columns: 1fr 120px; gap: 8px; padding: 0 var(--pad) 12px; border-bottom: 1px solid var(--line2); }
+#history .hist-filter .seg { grid-column: 1 / -1; justify-self: start; }
+#history .hist-list { flex: 1; overflow-y: auto; min-height: 0; }
+#history .hist-list button { display: block; width: 100%; padding: 10px var(--pad) 10px calc(var(--pad) - 2px); background: #fff; border: 0; border-left: 2px solid transparent; border-bottom: 1px solid var(--line); text-align: left; }
+#history .hist-list button:hover { background: var(--soft); }
+#history .hist-list button.sel { background: var(--soft); border-left-color: var(--acc); }
+.h-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.h-top b { font-size: 16px; font-weight: 700; color: var(--ink); }
+.h-sub { display: block; margin-top: 1px; font-size: 14px; color: var(--mute); }
+.h-none { padding: 16px var(--pad); font-size: 14px; color: var(--mute); }
+
+#history .page { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-rows: minmax(0, 1fr) auto auto auto; grid-template-areas: "map map" "bar bar" "sum chart" "tools chart"; min-width: 0; min-height: 0; }
+#histMap { grid-area: map; min-height: 0; }
+.hist-bar { grid-area: bar; display: flex; align-items: center; gap: 12px; padding: 0 var(--pad); height: 44px; border-top: 1px solid var(--line2); border-bottom: 1px solid var(--line2); }
+.hist-bar #play { width: 28px; height: 28px; padding: 0; background: var(--ink); border: 0; color: #fff; font-size: 10px; line-height: 28px; }
+.hist-bar #scrub { flex: 1; }
+.hist-bar #scrubTime { min-width: 250px; text-align: right; font-size: 14px; color: var(--text); }
+input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line2); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; background: var(--ink); border: 0; border-radius: 50%; }
+input[type=range]::-moz-range-track { height: 2px; background: var(--line2); }
+input[type=range]::-moz-range-thumb { width: 12px; height: 12px; background: var(--ink); border: 0; border-radius: 50%; }
+.hist-summary { grid-area: sum; padding: 16px 24px 0 var(--pad); font-size: 14px; line-height: 1.65; color: var(--text); }
+.hist-summary b { display: block; margin-bottom: 8px; font-size: 20px; font-weight: 800; color: var(--ink); }
+.hs { display: block; border-top: 1px solid var(--ink); }
+.hs > span { display: grid; grid-template-columns: 168px 1fr; padding: 6px 0; border-bottom: 1px solid var(--line); color: var(--ink); }
+.hs i { font-style: normal; color: var(--mute); }
+.hist-tools { grid-area: tools; align-self: end; display: flex; gap: 8px; padding: 12px 24px 16px var(--pad); }
+.hist-tools button { padding: 6px 12px; background: #fff; border: 1px solid var(--line2); font-size: 12px; font-weight: 600; color: var(--ink); }
+.hist-tools button:hover { background: var(--soft); }
+.hist-tools button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+.hist-tools select { font-size: 12px; max-width: 160px; }
+#history .chart-box { grid-area: chart; padding: 16px var(--pad) 16px 0; }
+.hist-wrap { height: 100%; min-height: 200px; }
+
+/* ---------- 검증 섹션 4개: 같은 틀 ---------- */
+#review, #compare, #model, #track { border-bottom: 1px solid var(--line2); }
+#review .wrap, #compare .wrap, #model .wrap, #track .wrap { display: grid; grid-template-columns: var(--side) minmax(0, 860px); padding: 56px var(--pad) 64px 0; }
+#review .wrap > *, #compare .wrap > *, #model .wrap > *, #track .wrap > * { grid-column: 2; padding-left: var(--pad); }
+main .wrap > .sec-title { grid-column: 1 !important; grid-row: 1 / span 12; padding-left: var(--pad) !important; font-size: 20px; font-weight: 800; line-height: 1.4; color: var(--ink); }
+main h3 { margin-bottom: 12px; font-size: 14px; font-weight: 600; color: var(--ink); }
+
+/* 전향 복기 */
+#review.rv-on #turnStats, #review.rv-on .turn-head, #review.rv-on #turnList { display: none; }
+.rv-tabs { display: flex; border: 1px solid var(--line2); }
+.rv-tabs button { flex: 1; display: flex; align-items: baseline; justify-content: center; gap: 8px; padding: 10px 8px; background: #fff; border: 0; border-left: 1px solid var(--line2); font-size: 14px; font-weight: 500; color: var(--mute); }
+.rv-tabs button:first-child { border-left: 0; }
+.rv-tabs button b { font-size: 16px; font-weight: 700; color: var(--ink); }
+.rv-tabs button[aria-pressed="true"] { background: var(--ink); color: #d5d8db; }
+.rv-tabs button[aria-pressed="true"] b { color: #fff; }
+.rv-table { margin-top: 24px; table-layout: fixed; }
+.rv-table th, .rv-table td { text-align: left; }
+.rv-table th:first-child { width: 34%; }
+.rv-table .nm { padding: 0; background: none; border: 0; font-size: 16px; font-weight: 700; color: var(--ink); }
+.rv-table .nm:hover { text-decoration: underline; text-underline-offset: 3px; }
+.rv-table .yr { margin-left: 8px; font-size: 14px; color: var(--faint); }
+.rv-table td.w { font-weight: 700; color: var(--ink); }
+.rv-table .miss, .rv-table .na { color: var(--faint); }
+.rv-table .res { font-weight: 600; color: var(--ink); }
+.rv-table .res.own, .rv-table .res.clf { color: var(--acc); }
+.rv-table .res.eq { color: var(--faint); font-weight: 400; }
+.rv-pg { display: flex; gap: 4px; margin-top: 16px; }
+.rv-pg button { min-width: 30px; height: 30px; background: #fff; border: 1px solid var(--line2); font-size: 12px; font-weight: 600; color: var(--mute); }
+.rv-pg button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+/* 기상청 비교 */
+#compare .cmp-grid { display: flex; flex-direction: column; }
+#compare .cmp-side { display: contents; }
+#metrics { order: 1; }
+#metrics table { table-layout: fixed; }
+#metrics th, #metrics td { text-align: left; white-space: normal; }
+#metrics th:first-child { width: 32%; }
+#metrics td:first-child { color: var(--mute); }
+#metrics td:nth-child(2) { font-weight: 700; color: var(--ink); }
+#compare .lead-box { order: 2; margin-top: 40px; }
+.lead-wrap { height: 280px; }
+#factors { order: 3; margin-top: 40px; }
+.fac-head { display: flex; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--ink); font-size: 12px; font-weight: 600; color: var(--mute); }
+.fac-head span:first-child { color: var(--ink); font-size: 14px; }
+.fac-head span:not(:first-child) { width: 180px; }
+.fac { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
+.fac > span { flex: 1; }
+.fac .bars { display: flex; gap: 12px; }
+.fac .bar { width: 180px; height: 6px; background: var(--soft); }
+
+/* 모델 성능 */
+#model .wrap > .model-tabs { justify-self: start; margin-left: var(--pad); padding-left: 0; }
+#modelTable { margin-top: 16px; }
+.mt th, .mt td { text-align: left; vertical-align: top; }
+.mt td b { font-weight: 600; color: var(--text); }
+.mt tr.main th, .mt tr.main td b { font-weight: 700; color: var(--ink); }
+.mt .was { color: var(--faint); text-decoration: line-through; font-size: 14px; }
+.mt small { display: block; font-size: 12px; color: var(--mute); }
+.mt-bar { position: relative; display: block; width: 96px; height: 3px; margin-top: 6px; background: var(--soft); }
+.mt-bar u { display: block; height: 100%; background: var(--faint); }
+.mt tr.main .mt-bar u { background: var(--acc); }
+.mt-bar s { position: absolute; top: -3px; width: 1px; height: 9px; background: var(--ink); }
+
+/* 경로 예측 */
+.track-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.track-grid.lower { margin-top: 40px; }
+.track-wrap { height: 220px; }
+.auc th, .auc td { text-align: right; }
+.auc th:first-child, .auc td:first-child { text-align: left; }
+.auc td { font-size: 14px; }
+.auc td b { font-weight: 600; }
+.auc tr.best td { color: var(--ink); font-weight: 700; }
+.auc tr.best td b { font-weight: 700; color: var(--acc); }
+.aucbar { display: none; }
+
+/* ---------- 바닥글 ---------- */
+.foot { padding: 20px var(--pad) 40px calc(var(--side) + var(--pad)); font-size: 12px; line-height: 1.7; color: var(--mute); }
+.foot span { margin: 0 4px; color: var(--faint); }
+.foot a { color: var(--text); margin-right: 2px; }
+.foot a:hover { text-decoration: underline; }
